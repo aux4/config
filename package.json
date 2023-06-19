@@ -1,0 +1,39 @@
+{
+  "name": "@aux4/config",
+  "version": "0.1.0",
+  "description": "Configuration Manager",
+  "main": "index.js",
+  "preferGlobal": true,
+  "bin": {
+    "aux4-config": "bin/executable.js"
+  },
+  "scripts": {
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aux4/config"
+  },
+  "keywords": [
+    "aux4",
+    "config",
+    "environment",
+    "json",
+    "yaml"
+  ],
+  "author": "Aux4",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/aux4/config/issues"
+  },
+  "homepage": "https://github.com/aux4/config#readme",
+  "dependencies": {
+    "@aux4/engine": "^1.0.13",
+    "colors": "^1.4.0",
+    "js-yaml": "^4.1.0",
+    "merge": "^2.1.1"
+  },
+  "devDependencies": {
+    "jest": "^29.5.0"
+  }
+}

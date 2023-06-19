@@ -1,0 +1,12 @@
+{
+  "config": {
+    "dev": {
+      "host": "localhost",
+      "port": 3000
+    },
+    "prod": {
+      "host": "aux4.io",
+      "port": 80
+    }
+  }
+}
