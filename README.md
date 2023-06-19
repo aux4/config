@@ -1,4 +1,4 @@
-# config
+# @aux4/config
 
 ## Install
 
@@ -36,4 +36,21 @@ config.json
     }
   }
 }
+```
+
+### Get configuration
+
+```
+$ aux4-config --file config.yaml --name dev
+
+{
+  "host": "localhost",
+  "port": 3000
+}
+```
+
+```
+$ aux4-config --file config.yaml --name dev/host
+
+localhost
 ```
