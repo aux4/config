@@ -1,6 +1,7 @@
 const { ConfigLoader } = require("../../index");
 const { Output: out } = require("@aux4/engine");
 const ConfigSaver = require("../../lib/ConfigSaver");
+const { findConfigFile } = require("../../lib/Utils");
 
 async function setConfigExecutor(args) {
   let name = await args.name;
@@ -22,17 +23,12 @@ async function setConfigExecutor(args) {
     process.exit(1);
   }
 
-  const config = ConfigLoader.load(await args.file);
-  const response = config.set(name, value);
-
   const file = await args.file;
 
-  if (!file) {
-    out.println("file must be specified to save merged configuration".red);
-    process.exit(1);
-  }
+  const config = ConfigLoader.load(file);
+  const response = config.set(name, value);
 
-  await ConfigSaver.save(file, config.config);
+  await ConfigSaver.save(file || "config.yaml", config.config);
 
   if (response === undefined) {
     process.stdout.write("");

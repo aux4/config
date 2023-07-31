@@ -45,12 +45,12 @@ config.load({
               },
               {
                 name: "name",
-                text: "The name of the configuration value to get",
-                default: ""
+                text: "The name of the configuration value to get"
               },
               {
                 name: "value",
-                text: "The value to set"
+                text: "The value to set",
+                default: ""
               }
             ]
           }
