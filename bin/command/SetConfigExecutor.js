@@ -26,17 +26,9 @@ async function setConfigExecutor(args) {
   const file = await args.file;
 
   const config = ConfigLoader.load(file);
-  const response = config.set(name, value);
+  config.set(name, value);
 
   await ConfigSaver.save(file || "config.yaml", config.config);
-
-  if (response === undefined) {
-    process.stdout.write("");
-  } else if (typeof response === "object") {
-    process.stdout.write(JSON.stringify(response, null, 2));
-  } else {
-    process.stdout.write(response.toString());
-  }
 }
 
 module.exports = { setConfigExecutor };

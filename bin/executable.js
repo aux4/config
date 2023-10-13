@@ -5,7 +5,7 @@ const { getConfigExecutor } = require("./command/GetConfigExecutor");
 const { mergeConfigExecutor } = require("./command/MergeConfigExecutor");
 const { setConfigExecutor } = require("./command/SetConfigExecutor");
 
-const args = process.argv.slice(2);
+process.title = "aux4-config";
 
 const config = new Config();
 config.load({
@@ -80,6 +80,12 @@ config.load({
 });
 
 (async () => {
-  const engine = new Engine({ config });
-  await engine.run(args);
+  const args = process.argv.splice(2);
+
+  try {
+    const engine = new Engine({ config });
+    await engine.run(args);
+  } catch (e) {
+    process.exit(1);
+  }
 })();

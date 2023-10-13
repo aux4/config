@@ -65,7 +65,9 @@ describe("Config", () => {
     it("should throw error", () => {
       expect(() => {
         new Config("./test/wrong.json");
-      }).toThrow("Error parsing JSON config file ./test/wrong.json: Unexpected token w in JSON at position 4");
+      }).toThrow(
+        "Error parsing JSON config file ./test/wrong.json: Expected property name or '}' in JSON at position 4"
+      );
     });
   });
 
