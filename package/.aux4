@@ -78,7 +78,7 @@
         {
           "name": "merge",
           "execute": [
-            "${packageDir}/aux4-config merge '${file}' '${save}'"
+            "stdin:${packageDir}/aux4-config merge '${file}' '${save}'"
           ],
           "help": {
             "text": "Merge a configuration file into the current configuration",
