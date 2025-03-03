@@ -1,0 +1,102 @@
+{
+  "scope": "aux4",
+  "name": "config",
+  "version": "0.0.1",
+  "description": "aux4 configuration utility",
+  "dependencies": [
+    "aux4/aux4"
+  ],
+  "tags": [
+    "aux4",
+    "config"
+  ],
+  "profiles": [
+    {
+      "name": "main",
+      "commands": [
+        {
+          "name": "config",
+          "execute": [
+            "profile:config"
+          ],
+          "help": {
+            "text": "aux4 configuration utility"
+          }
+        }
+      ]
+    },
+    {
+      "name": "config",
+      "commands": [
+        {
+          "name": "get",
+          "execute": [
+            "${packageDir}/aux4-config get '${file}' '${name}'"
+          ],
+          "help": {
+            "text": "Get a configuration value",
+            "variables": [
+              {
+                "name": "file",
+                "text": "The configuration file to use",
+                "default": ""
+              },
+              {
+                "name": "name",
+                "text": "The name of the configuration value to get",
+                "default": "",
+                "arg": true
+              }
+            ]
+          }
+        },
+        {
+          "name": "set",
+          "execute": [
+            "${packageDir}/aux4-config set '${file}' '${name}' '${value}'"
+          ],
+          "help": {
+            "text": "Set a configuration value",
+            "variables": [
+              {
+                "name": "file",
+                "text": "The configuration file to use",
+                "default": ""
+              },
+              {
+                "name": "name",
+                "text": "The name of the configuration value to get"
+              },
+              {
+                "name": "value",
+                "text": "The value to set",
+                "default": ""
+              }
+            ]
+          }
+        },
+        {
+          "name": "merge",
+          "execute": [
+            "${packageDir}/aux4-config merge '${file}' '${save}'"
+          ],
+          "help": {
+            "text": "Merge a configuration file into the current configuration",
+            "variables": [
+              {
+                "name": "file",
+                "text": "The configuration file to merge",
+                "default": ""
+              },
+              {
+                "name": "save",
+                "text": "save the merged configuration to the specified file",
+                "default": "false"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

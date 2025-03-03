@@ -1,0 +1,259 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"gopkg.in/yaml.v3"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+type Config map[string]interface{}
+
+type Aux4Config struct {
+	Config Config `json:"config" yaml:"config"`
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "Invalid command")
+		os.Exit(1)
+	}
+
+	action := os.Args[1]
+	configFile := ""
+	if len(os.Args) > 2 {
+		configFile = os.Args[2]
+	}
+
+	if configFile == "" {
+		configFile = findConfigFile()
+	}
+
+	if configFile == "" {
+		fmt.Fprintln(os.Stderr, "No config file found")
+		os.Exit(1)
+	}
+
+	aux4Config, err := loadConfig(configFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	switch action {
+	case "get":
+		getConfig(aux4Config)
+	case "set":
+		setConfig(aux4Config, configFile)
+	case "merge":
+		mergeAux4Config(aux4Config, configFile)
+	default:
+		fmt.Fprintln(os.Stderr, "Command not found")
+		os.Exit(1)
+	}
+}
+
+func getConfig(aux4Config Aux4Config) {
+	if len(os.Args) < 4 {
+		fmt.Fprintln(os.Stderr, "Mising parameters")
+		os.Exit(1)
+	}
+	path := os.Args[3]
+	value, found := getNestedValue(aux4Config.Config, path)
+	if found {
+		printValue(value)
+	}
+}
+
+func setConfig(aux4Config Aux4Config, configFile string) {
+	if len(os.Args) < 5 {
+		fmt.Fprintln(os.Stderr, "Mising parameters")
+		os.Exit(1)
+	}
+	path, value := os.Args[3], os.Args[4]
+	setNestedValue(aux4Config.Config, path, value)
+
+	if err := saveConfig(configFile, aux4Config); err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving config: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func mergeAux4Config(aux4Config Aux4Config, configFile string) {
+	if len(os.Args) < 4 {
+		fmt.Fprintln(os.Stderr, "Mising parameters")
+		os.Exit(1)
+	}
+	save := os.Args[3] == "true"
+
+	mergedConfig, err := mergeConfig(aux4Config)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error merging config: %v\n", err)
+		os.Exit(1)
+	}
+
+	if save {
+		if err := saveConfig(configFile, mergedConfig); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving merged config: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		printValue(mergedConfig)
+	}
+}
+
+func findConfigFile() string {
+	for _, ext := range []string{"yaml", "yml", "json"} {
+		path := "config." + ext
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
+func loadConfig(filename string) (Aux4Config, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return Aux4Config{}, err
+	}
+
+	var auxConfig Aux4Config
+	switch filepath.Ext(filename) {
+	case ".json":
+		var raw map[string]interface{}
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return Aux4Config{}, err
+		}
+		auxConfig = Aux4Config{Config: convertToConfig(raw["config"].(map[string]interface{}))}
+	case ".yaml", ".yml":
+		err = yaml.Unmarshal(data, &auxConfig)
+	}
+
+	return auxConfig, err
+}
+
+func saveConfig(filename string, auxConfig Aux4Config) error {
+	var data []byte
+	var err error
+
+	switch filepath.Ext(filename) {
+	case ".json":
+		data, err = json.MarshalIndent(auxConfig, "", "  ")
+	case ".yaml", ".yml":
+		var buf strings.Builder
+		encoder := yaml.NewEncoder(&buf)
+		encoder.SetIndent(2)
+		err = encoder.Encode(auxConfig)
+		encoder.Close()
+		data = []byte(buf.String())
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(filename, data, 0644)
+}
+
+func convertToConfig(property map[string]interface{}) Config {
+	config := Config{}
+
+	for key, value := range property {
+		if nestedProperty, ok := value.(map[string]interface{}); ok {
+			config[key] = convertToConfig(nestedProperty)
+		} else {
+			config[key] = value
+		}
+	}
+
+	return config
+}
+
+func getNestedValue(config Config, path string) (interface{}, bool) {
+	if path == "" {
+		return config, true
+	}
+
+	var value interface{} = config
+
+  keys := strings.Split(path, "/")
+
+	for _, key := range keys {
+		if property, ok := value.(Config); ok {
+			value, ok = property[key]
+			if !ok {
+				return nil, false
+			}
+		} else {
+			return nil, false
+		}
+	}
+
+	return value, true
+}
+
+func setNestedValue(config Config, path, value string) {
+	keys := strings.Split(path, "/")
+	lastKey := keys[len(keys)-1]
+	property := config
+
+	for _, key := range keys[:len(keys)-1] {
+		if _, ok := property[key].(Config); !ok {
+			property[key] = make(Config)
+		}
+		property = property[key].(Config)
+	}
+
+	property[lastKey] = value
+}
+
+func mergeConfig(auxConfig Aux4Config) (Aux4Config, error) {
+	input, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return Aux4Config{}, err
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(input, &raw); err != nil {
+		return auxConfig, err
+	}
+
+	incoming := Aux4Config{Config: convertToConfig(raw)}
+	merged := Aux4Config{Config: deepMerge(auxConfig.Config, incoming.Config)}
+
+	return merged, nil
+}
+
+func deepMerge(sourceConfig, incomingConfig Config) Config {
+	for key, value := range incomingConfig {
+		if nestedIncomingConfig, ok := value.(Config); ok {
+			if nestedSourceConfig, ok := sourceConfig[key].(Config); ok {
+				sourceConfig[key] = deepMerge(nestedSourceConfig, nestedIncomingConfig)
+			} else {
+				sourceConfig[key] = nestedIncomingConfig
+			}
+		} else {
+			sourceConfig[key] = value
+		}
+	}
+
+	return sourceConfig
+}
+
+func printValue(configValue interface{}) {
+	switch value := configValue.(type) {
+	case Config:
+		data, _ := json.MarshalIndent(value, "", "  ")
+		fmt.Println(string(data))
+	case Aux4Config:
+		data, _ := json.MarshalIndent(value.Config, "", "  ")
+		fmt.Println(string(data))
+	default:
+		fmt.Println(value)
+	}
+}
+

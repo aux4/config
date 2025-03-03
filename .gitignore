@@ -1,4 +1,6 @@
 .idea
 node_modules
 coverage
+package/dist
 **/.DS_Store
+**/*.zip
