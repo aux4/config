@@ -11,6 +11,18 @@
           "help": {
             "text": "build the app"
           }
+        },
+        {
+          "name": "release",
+          "execute": [
+            "aux4 aux4 releaser increment-version --dir ./package",
+            "aux4 build all",
+            "cd package && aux4 aux4 pkger build .",
+            "aux4 aux4 pkger publish package/aux4_config_${version}.zip"
+          ],
+          "help": {
+            "text": ""
+          }
         }
       ]
     },

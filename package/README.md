@@ -1,10 +1,4 @@
-# @aux4/config
-
-## Install
-
-```bash
-npme install --global @aux4/config
-```
+# aux4 config
 
 ## Usage
 
@@ -40,17 +34,40 @@ config.json
 
 ### Get configuration
 
-```
-$ aux4-config --file config.yaml --name dev
+The command [aux4 config get](./commands/config/get) can be used to get the configuration.
 
+```bash
+> aux4 config get --name dev
+```
+```json
 {
   "host": "localhost",
   "port": 3000
 }
 ```
 
-```
-$ aux4-config --file config.yaml --name dev/host
 
+```bash
+> aux4 config get --name dev/host
+```
+```bash
 localhost
+```
+
+### Set configuration
+
+The command [aux4 config set](./commands/config/set) can be used to set the configuration.
+
+```bash
+> aux4 config set --name dev/host --value dev.aux4.io
+```
+
+```bash
+> aux4 config get --name dev
+```
+```json
+{
+  "host": "dev.aux4.io",
+  "port": 3000
+}
 ```
