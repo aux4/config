@@ -247,10 +247,10 @@ func deepMerge(sourceConfig, incomingConfig Config) Config {
 func printValue(configValue interface{}) {
 	switch value := configValue.(type) {
 	case Config:
-		data, _ := json.MarshalIndent(value, "", "  ")
+		data, _ := json.Marshal(value)
 		fmt.Println(string(data))
 	case Aux4Config:
-		data, _ := json.MarshalIndent(value.Config, "", "  ")
+		data, _ := json.Marshal(value.Config)
 		fmt.Println(string(data))
 	default:
 		fmt.Println(value)
