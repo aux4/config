@@ -22,7 +22,7 @@
 #### should return dev value
 
 ```execute
-aux4 config get dev
+aux4 config get dev | jq .
 ```
 
 ```expect
@@ -72,7 +72,7 @@ config:
 #### should return dev value
 
 ```execute
-aux4 config get dev
+aux4 config get dev | jq .
 ```
 
 ```expect

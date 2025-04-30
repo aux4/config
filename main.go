@@ -3,17 +3,16 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
-type Config map[string]interface{}
-
 type Aux4Config struct {
-	Config Config `json:"config" yaml:"config"`
+	Config map[string]interface{} `json:"config" yaml:"config"`
 }
 
 func main() {
@@ -83,25 +82,44 @@ func setConfig(aux4Config Aux4Config, configFile string) {
 }
 
 func mergeAux4Config(aux4Config Aux4Config, configFile string) {
-	if len(os.Args) < 4 {
+	if len(os.Args) < 5 {
 		fmt.Fprintln(os.Stderr, "Mising parameters")
 		os.Exit(1)
 	}
-	save := os.Args[3] == "true"
+	path := os.Args[3]
+	save := os.Args[4] == "true"
 
-	mergedConfig, err := mergeConfig(aux4Config)
+	var value interface{}
+	var found bool
+
+	if path == "" {
+		value = aux4Config.Config
+	} else {
+		value, found = getNestedValue(aux4Config.Config, path)
+		if !found {
+			value = make(map[string]interface{})
+		}
+	}
+
+	mergedConfig, err := mergeConfig(value.(map[string]interface{}))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error merging config: %v\n", err)
 		os.Exit(1)
 	}
 
+	if path == "" {
+		aux4Config.Config = mergedConfig
+	} else {
+		setNestedValue(aux4Config.Config, path, mergedConfig)
+	}
+
 	if save {
-		if err := saveConfig(configFile, mergedConfig); err != nil {
+		if err := saveConfig(configFile, aux4Config); err != nil {
 			fmt.Fprintf(os.Stderr, "Error saving merged config: %v\n", err)
 			os.Exit(1)
 		}
 	} else {
-		printValue(mergedConfig)
+		printValue(aux4Config)
 	}
 }
 
@@ -159,8 +177,8 @@ func saveConfig(filename string, auxConfig Aux4Config) error {
 	return os.WriteFile(filename, data, 0644)
 }
 
-func convertToConfig(property map[string]interface{}) Config {
-	config := Config{}
+func convertToConfig(property map[string]interface{}) map[string]interface{} {
+	config := make(map[string]interface{})
 
 	for key, value := range property {
 		if nestedProperty, ok := value.(map[string]interface{}); ok {
@@ -173,17 +191,17 @@ func convertToConfig(property map[string]interface{}) Config {
 	return config
 }
 
-func getNestedValue(config Config, path string) (interface{}, bool) {
+func getNestedValue(config map[string]interface{}, path string) (interface{}, bool) {
 	if path == "" {
 		return config, true
 	}
 
 	var value interface{} = config
 
-  keys := strings.Split(path, "/")
+	keys := strings.Split(path, "/")
 
 	for _, key := range keys {
-		if property, ok := value.(Config); ok {
+		if property, ok := value.(map[string]interface{}); ok {
 			value, ok = property[key]
 			if !ok {
 				return nil, false
@@ -196,42 +214,52 @@ func getNestedValue(config Config, path string) (interface{}, bool) {
 	return value, true
 }
 
-func setNestedValue(config Config, path, value string) {
+func setNestedValue(config map[string]interface{}, path string, value any) {
 	keys := strings.Split(path, "/")
 	lastKey := keys[len(keys)-1]
 	property := config
 
 	for _, key := range keys[:len(keys)-1] {
-		if _, ok := property[key].(Config); !ok {
-			property[key] = make(Config)
+		if _, ok := property[key].(map[string]interface{}); !ok {
+			property[key] = make(map[string]interface{})
 		}
-		property = property[key].(Config)
+		property = property[key].(map[string]interface{})
 	}
 
 	property[lastKey] = value
 }
 
-func mergeConfig(auxConfig Aux4Config) (Aux4Config, error) {
+func mergeConfig(root map[string]interface{}) (map[string]interface{}, error) {
 	input, err := io.ReadAll(os.Stdin)
 	if err != nil {
-		return Aux4Config{}, err
+		return map[string]interface{}{}, err
 	}
 
 	var raw map[string]interface{}
 	if err := json.Unmarshal(input, &raw); err != nil {
-		return auxConfig, err
+		return root, err
 	}
 
-	incoming := Aux4Config{Config: convertToConfig(raw)}
-	merged := Aux4Config{Config: deepMerge(auxConfig.Config, incoming.Config)}
+	if _, ok := raw["config"]; ok {
+    raw = raw["config"].(map[string]interface{})
+	}
+
+	source := root
+
+	if _, ok := source["config"]; ok {
+		source = source["config"].(map[string]interface{})
+	}
+
+	incoming := convertToConfig(raw)
+	merged := deepMerge(source, incoming)
 
 	return merged, nil
 }
 
-func deepMerge(sourceConfig, incomingConfig Config) Config {
+func deepMerge(sourceConfig map[string]interface{}, incomingConfig map[string]interface{}) map[string]interface{} {
 	for key, value := range incomingConfig {
-		if nestedIncomingConfig, ok := value.(Config); ok {
-			if nestedSourceConfig, ok := sourceConfig[key].(Config); ok {
+		if nestedIncomingConfig, ok := value.(map[string]interface{}); ok {
+			if nestedSourceConfig, ok := sourceConfig[key].(map[string]interface{}); ok {
 				sourceConfig[key] = deepMerge(nestedSourceConfig, nestedIncomingConfig)
 			} else {
 				sourceConfig[key] = nestedIncomingConfig
@@ -246,7 +274,7 @@ func deepMerge(sourceConfig, incomingConfig Config) Config {
 
 func printValue(configValue interface{}) {
 	switch value := configValue.(type) {
-	case Config:
+	case map[string]interface{}:
 		data, _ := json.Marshal(value)
 		fmt.Println(string(data))
 	case Aux4Config:
@@ -256,4 +284,3 @@ func printValue(configValue interface{}) {
 		fmt.Println(value)
 	}
 }
-
