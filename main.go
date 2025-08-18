@@ -12,7 +12,7 @@ import (
 )
 
 type Aux4Config struct {
-	Config map[string]interface{} `json:"config" yaml:"config"`
+	Config interface{} `json:"config" yaml:"config"`
 }
 
 func main() {
@@ -61,7 +61,7 @@ func getConfig(aux4Config Aux4Config) {
 		os.Exit(1)
 	}
 	path := os.Args[3]
-	value, found := getNestedValue(aux4Config.Config, path)
+	value, found := getNestedValueFromOrderedMap(aux4Config.Config, path)
 	if found {
 		printValue(value)
 	}
@@ -73,7 +73,7 @@ func setConfig(aux4Config Aux4Config, configFile string) {
 		os.Exit(1)
 	}
 	path, value := os.Args[3], os.Args[4]
-	setNestedValue(aux4Config.Config, path, value)
+	aux4Config.Config = setNestedValueInOrderedMap(aux4Config.Config, path, value)
 
 	if err := saveConfig(configFile, aux4Config); err != nil {
 		fmt.Fprintf(os.Stderr, "Error saving config: %v\n", err)
@@ -95,13 +95,24 @@ func mergeAux4Config(aux4Config Aux4Config, configFile string) {
 	if path == "" {
 		value = aux4Config.Config
 	} else {
-		value, found = getNestedValue(aux4Config.Config, path)
+		value, found = getNestedValueFromOrderedMap(aux4Config.Config, path)
 		if !found {
 			value = make(map[string]interface{})
 		}
 	}
 
-	mergedConfig, err := mergeConfig(value.(map[string]interface{}))
+	// Convert value to map for merging
+	var mapValue map[string]interface{}
+	switch v := value.(type) {
+	case *OrderedMap:
+		mapValue = v.Values
+	case map[string]interface{}:
+		mapValue = v
+	default:
+		mapValue = make(map[string]interface{})
+	}
+
+	mergedConfig, err := mergeConfig(mapValue)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error merging config: %v\n", err)
 		os.Exit(1)
@@ -110,7 +121,7 @@ func mergeAux4Config(aux4Config Aux4Config, configFile string) {
 	if path == "" {
 		aux4Config.Config = mergedConfig
 	} else {
-		setNestedValue(aux4Config.Config, path, mergedConfig)
+		aux4Config.Config = setNestedValueInOrderedMap(aux4Config.Config, path, mergedConfig)
 	}
 
 	if save {
@@ -148,7 +159,39 @@ func loadConfig(filename string) (Aux4Config, error) {
 		}
 		auxConfig = Aux4Config{Config: convertToConfig(raw["config"].(map[string]interface{}))}
 	case ".yaml", ".yml":
-		err = yaml.Unmarshal(data, &auxConfig)
+		// Use yaml.Node to preserve order, then convert to ordered map
+		var node yaml.Node
+		if err := yaml.Unmarshal(data, &node); err != nil {
+			return Aux4Config{}, err
+		}
+		
+		// Find the config node
+		var configNode *yaml.Node
+		if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
+			rootNode := node.Content[0]
+			if rootNode.Kind == yaml.MappingNode {
+				for i := 0; i < len(rootNode.Content); i += 2 {
+					keyNode := rootNode.Content[i]
+					valueNode := rootNode.Content[i+1]
+					var key string
+					if keyNode.Decode(&key) == nil && key == "config" {
+						configNode = valueNode
+						break
+					}
+				}
+			}
+		}
+		
+		if configNode != nil {
+			config, err := nodeToOrderedMap(configNode)
+			if err != nil {
+				return Aux4Config{}, err
+			}
+			auxConfig = Aux4Config{Config: config}
+		} else {
+			// Fallback to regular unmarshal
+			err = yaml.Unmarshal(data, &auxConfig)
+		}
 	}
 
 	return auxConfig, err
@@ -214,6 +257,36 @@ func getNestedValue(config map[string]interface{}, path string) (interface{}, bo
 	return value, true
 }
 
+func getNestedValueFromOrderedMap(value interface{}, path string) (interface{}, bool) {
+	if path == "" {
+		return value, true
+	}
+
+	keys := strings.Split(path, "/")
+	current := value
+
+	for _, key := range keys {
+		switch v := current.(type) {
+		case *OrderedMap:
+			next, exists := v.Get(key)
+			if !exists {
+				return nil, false
+			}
+			current = next
+		case map[string]interface{}:
+			next, exists := v[key]
+			if !exists {
+				return nil, false
+			}
+			current = next
+		default:
+			return nil, false
+		}
+	}
+
+	return current, true
+}
+
 func setNestedValue(config map[string]interface{}, path string, value any) {
 	keys := strings.Split(path, "/")
 	lastKey := keys[len(keys)-1]
@@ -227,6 +300,36 @@ func setNestedValue(config map[string]interface{}, path string, value any) {
 	}
 
 	property[lastKey] = value
+}
+
+func setNestedValueInOrderedMap(config interface{}, path string, value any) interface{} {
+	// Convert to map for modification, then back to OrderedMap
+	var mapConfig map[string]interface{}
+	
+	switch v := config.(type) {
+	case *OrderedMap:
+		mapConfig = v.Values
+	case map[string]interface{}:
+		mapConfig = v
+	default:
+		mapConfig = make(map[string]interface{})
+	}
+	
+	setNestedValue(mapConfig, path, value)
+	
+	// Convert back to OrderedMap if it was originally
+	if _, ok := config.(*OrderedMap); ok {
+		result := newOrderedMap()
+		if origOm, ok := config.(*OrderedMap); ok {
+			// Preserve order
+			for _, key := range origOm.Keys {
+				result.Set(key, mapConfig[key])
+			}
+		}
+		return result
+	}
+	
+	return mapConfig
 }
 
 func mergeConfig(root map[string]interface{}) (map[string]interface{}, error) {
@@ -272,15 +375,94 @@ func deepMerge(sourceConfig map[string]interface{}, incomingConfig map[string]in
 	return sourceConfig
 }
 
+// OrderedMap represents a map that preserves insertion order
+type OrderedMap struct {
+	Keys   []string
+	Values map[string]interface{}
+}
+
+func newOrderedMap() *OrderedMap {
+	return &OrderedMap{
+		Keys:   make([]string, 0),
+		Values: make(map[string]interface{}),
+	}
+}
+
+func (om *OrderedMap) Set(key string, value interface{}) {
+	if _, exists := om.Values[key]; !exists {
+		om.Keys = append(om.Keys, key)
+	}
+	om.Values[key] = value
+}
+
+func (om *OrderedMap) Get(key string) (interface{}, bool) {
+	value, exists := om.Values[key]
+	return value, exists
+}
+
+func nodeToOrderedMap(node *yaml.Node) (interface{}, error) {
+	switch node.Kind {
+	case yaml.MappingNode:
+		om := newOrderedMap()
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valueNode := node.Content[i+1]
+			
+			var key string
+			if err := keyNode.Decode(&key); err != nil {
+				continue
+			}
+			
+			value, err := nodeToOrderedMap(valueNode)
+			if err != nil {
+				continue
+			}
+			om.Set(key, value)
+		}
+		return om, nil
+	case yaml.SequenceNode:
+		var result []interface{}
+		for _, childNode := range node.Content {
+			value, err := nodeToOrderedMap(childNode)
+			if err != nil {
+				continue
+			}
+			result = append(result, value)
+		}
+		return result, nil
+	case yaml.ScalarNode:
+		var value interface{}
+		err := node.Decode(&value)
+		return value, err
+	}
+	return nil, fmt.Errorf("unsupported node kind: %v", node.Kind)
+}
+
 func printValue(configValue interface{}) {
 	switch value := configValue.(type) {
+	case *OrderedMap:
+		fmt.Print("{")
+		for i, key := range value.Keys {
+			if i > 0 {
+				fmt.Print(",")
+			}
+			keyJSON, _ := json.Marshal(key)
+			fmt.Printf("%s:", keyJSON)
+			printValue(value.Values[key])
+		}
+		fmt.Print("}")
 	case map[string]interface{}:
+		// Convert regular map to OrderedMap if possible, otherwise use regular JSON
 		data, _ := json.Marshal(value)
-		fmt.Println(string(data))
+		fmt.Print(string(data))
 	case Aux4Config:
-		data, _ := json.Marshal(value.Config)
-		fmt.Println(string(data))
+		printValue(value.Config)
 	default:
-		fmt.Println(value)
+		data, _ := json.Marshal(value)
+		if string(data) == "null" {
+			fmt.Print(value)
+		} else {
+			fmt.Print(string(data))
+		}
 	}
 }
