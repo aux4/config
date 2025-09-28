@@ -205,10 +205,12 @@ func saveConfig(filename string, auxConfig Aux4Config) error {
 	case ".json":
 		data, err = json.MarshalIndent(auxConfig, "", "  ")
 	case ".yaml", ".yml":
+		// Convert OrderedMap back to regular maps for proper YAML serialization
+		configForSave := Aux4Config{Config: convertOrderedMapToMap(auxConfig.Config)}
 		var buf strings.Builder
 		encoder := yaml.NewEncoder(&buf)
 		encoder.SetIndent(2)
-		err = encoder.Encode(auxConfig)
+		err = encoder.Encode(configForSave)
 		encoder.Close()
 		data = []byte(buf.String())
 	}
@@ -232,6 +234,31 @@ func convertToConfig(property map[string]interface{}) map[string]interface{} {
 	}
 
 	return config
+}
+
+func convertOrderedMapToMap(value interface{}) interface{} {
+	switch v := value.(type) {
+	case *OrderedMap:
+		result := make(map[string]interface{})
+		for _, key := range v.Keys {
+			result[key] = convertOrderedMapToMap(v.Values[key])
+		}
+		return result
+	case map[string]interface{}:
+		result := make(map[string]interface{})
+		for key, val := range v {
+			result[key] = convertOrderedMapToMap(val)
+		}
+		return result
+	case []interface{}:
+		result := make([]interface{}, len(v))
+		for i, val := range v {
+			result[i] = convertOrderedMapToMap(val)
+		}
+		return result
+	default:
+		return v
+	}
 }
 
 func getNestedValue(config map[string]interface{}, path string) (interface{}, bool) {
@@ -305,31 +332,60 @@ func setNestedValue(config map[string]interface{}, path string, value any) {
 func setNestedValueInOrderedMap(config interface{}, path string, value any) interface{} {
 	// Convert to map for modification, then back to OrderedMap
 	var mapConfig map[string]interface{}
-	
+
 	switch v := config.(type) {
 	case *OrderedMap:
-		mapConfig = v.Values
+		mapConfig = make(map[string]interface{})
+		for key, val := range v.Values {
+			mapConfig[key] = convertOrderedMapToMap(val)
+		}
 	case map[string]interface{}:
 		mapConfig = v
 	default:
 		mapConfig = make(map[string]interface{})
 	}
-	
+
 	setNestedValue(mapConfig, path, value)
-	
+
 	// Convert back to OrderedMap if it was originally
-	if _, ok := config.(*OrderedMap); ok {
+	if origOm, ok := config.(*OrderedMap); ok {
 		result := newOrderedMap()
-		if origOm, ok := config.(*OrderedMap); ok {
-			// Preserve order
-			for _, key := range origOm.Keys {
-				result.Set(key, mapConfig[key])
+		// First, preserve original order for existing keys
+		for _, key := range origOm.Keys {
+			if val, exists := mapConfig[key]; exists {
+				result.Set(key, val)
+			}
+		}
+		// Then add any new keys that weren't in the original
+		for key, val := range mapConfig {
+			if _, exists := result.Get(key); !exists {
+				result.Set(key, val)
 			}
 		}
 		return result
 	}
-	
+
 	return mapConfig
+}
+
+func convertBackToOrderedMap(value interface{}) interface{} {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		// Check if this was originally an OrderedMap by looking for nested structures
+		result := newOrderedMap()
+		for key, val := range v {
+			result.Set(key, convertBackToOrderedMap(val))
+		}
+		return result
+	case []interface{}:
+		result := make([]interface{}, len(v))
+		for i, val := range v {
+			result[i] = convertBackToOrderedMap(val)
+		}
+		return result
+	default:
+		return v
+	}
 }
 
 func mergeConfig(root map[string]interface{}) (map[string]interface{}, error) {
@@ -439,6 +495,10 @@ func nodeToOrderedMap(node *yaml.Node) (interface{}, error) {
 }
 
 func printValue(configValue interface{}) {
+	printValueWithContext(configValue, false)
+}
+
+func printValueWithContext(configValue interface{}, inObject bool) {
 	switch value := configValue.(type) {
 	case *OrderedMap:
 		fmt.Print("{")
@@ -448,7 +508,7 @@ func printValue(configValue interface{}) {
 			}
 			keyJSON, _ := json.Marshal(key)
 			fmt.Printf("%s:", keyJSON)
-			printValue(value.Values[key])
+			printValueWithContext(value.Values[key], true)
 		}
 		fmt.Print("}")
 	case map[string]interface{}:
@@ -456,7 +516,16 @@ func printValue(configValue interface{}) {
 		data, _ := json.Marshal(value)
 		fmt.Print(string(data))
 	case Aux4Config:
-		printValue(value.Config)
+		printValueWithContext(value.Config, inObject)
+	case string:
+		if inObject {
+			// In object context, strings need to be properly quoted for valid JSON
+			data, _ := json.Marshal(value)
+			fmt.Print(string(data))
+		} else {
+			// Standalone strings should not have quotes
+			fmt.Print(value)
+		}
 	default:
 		data, _ := json.Marshal(value)
 		if string(data) == "null" {
