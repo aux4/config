@@ -6,45 +6,25 @@
         {
           "name": "build",
           "execute": [
-            "profile:build"
+            "aux4 builder all"
+          ],
+          "help": {
+            "text": "Build the app for all platforms"
+          }
+        },
+        {
+          "name": "builder",
+          "execute": [
+            "profile:builder"
           ],
           "help": {
             "text": "build the app"
-          }
-        },
-        {
-          "name": "install",
-          "execute": [
-            "set:os=!go env GOOS",
-            "set:arch=!go env GOARCH",
-            "set:version=!aux4 aux4 releaser get-version --dir ./package",
-            "aux4 build $os $arch",
-            "cd package && aux4 aux4 pkger build --out ../out .",
-            "aux4 aux4 pkger uninstall aux4/config",
-            "aux4 aux4 pkger install --fromFile out/${os}_${arch}_aux4_config_${version}.zip"
-          ],
-          "help": {
-            "text": "install aux4/config locally"
-          }
-        },
-        {
-          "name": "release",
-          "execute": [
-            "rm -f out/*",
-            "alias:aux4 aux4 releaser increment-version --dir ./package",
-            "set:version=!aux4 aux4 releaser get-version --dir ./package",
-            "aux4 build all",
-            "cd package && aux4 aux4 pkger build --out ../out .",
-            "aux4 aux4 pkger publish out/aux4_config_${version}.zip"
-          ],
-          "help": {
-            "text": ""
           }
         }
       ]
     },
     {
-      "name": "build",
+      "name": "builder",
       "commands": [
         {
           "name": "darwin",

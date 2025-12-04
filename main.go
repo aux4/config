@@ -511,6 +511,16 @@ func printValueWithContext(configValue interface{}, inObject bool) {
 			printValueWithContext(value.Values[key], true)
 		}
 		fmt.Print("}")
+	case []interface{}:
+		// Handle arrays (including arrays of OrderedMap objects)
+		fmt.Print("[")
+		for i, item := range value {
+			if i > 0 {
+				fmt.Print(",")
+			}
+			printValueWithContext(item, true)
+		}
+		fmt.Print("]")
 	case map[string]interface{}:
 		// Convert regular map to OrderedMap if possible, otherwise use regular JSON
 		data, _ := json.Marshal(value)
