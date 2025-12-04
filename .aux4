@@ -61,9 +61,9 @@
         {
           "name": "all",
           "execute": [
-            "aux4 build darwin",
-            "aux4 build linux",
-            "aux4 build windows"
+            "aux4 builder darwin",
+            "aux4 builder linux",
+            "aux4 builder windows"
           ],
           "help": {
             "text": "build the app for all platforms"
