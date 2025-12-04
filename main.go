@@ -118,10 +118,14 @@ func mergeAux4Config(aux4Config Aux4Config, configFile string) {
 		os.Exit(1)
 	}
 
+	// Convert merged config back to OrderedMap to preserve order
+	var mergedOrderedMap interface{}
 	if path == "" {
-		aux4Config.Config = mergedConfig
+		mergedOrderedMap = convertMapToOrderedMap(mergedConfig)
+		aux4Config.Config = mergedOrderedMap
 	} else {
-		aux4Config.Config = setNestedValueInOrderedMap(aux4Config.Config, path, mergedConfig)
+		mergedOrderedMap = convertMapToOrderedMap(mergedConfig)
+		aux4Config.Config = setNestedValueInOrderedMap(aux4Config.Config, path, mergedOrderedMap)
 	}
 
 	if save {
@@ -153,11 +157,11 @@ func loadConfig(filename string) (Aux4Config, error) {
 	var auxConfig Aux4Config
 	switch filepath.Ext(filename) {
 	case ".json":
-		var raw map[string]interface{}
-		if err := json.Unmarshal(data, &raw); err != nil {
+		config, err := parseJSONWithOrder(data)
+		if err != nil {
 			return Aux4Config{}, err
 		}
-		auxConfig = Aux4Config{Config: convertToConfig(raw["config"].(map[string]interface{}))}
+		auxConfig = Aux4Config{Config: config}
 	case ".yaml", ".yml":
 		// Use yaml.Node to preserve order, then convert to ordered map
 		var node yaml.Node
@@ -203,7 +207,9 @@ func saveConfig(filename string, auxConfig Aux4Config) error {
 
 	switch filepath.Ext(filename) {
 	case ".json":
-		data, err = json.MarshalIndent(auxConfig, "", "  ")
+		// Convert OrderedMap back to regular maps for proper JSON serialization
+		configForSave := Aux4Config{Config: convertOrderedMapToMap(auxConfig.Config)}
+		data, err = json.Marshal(configForSave)
 	case ".yaml", ".yml":
 		// Convert OrderedMap back to regular maps for proper YAML serialization
 		configForSave := Aux4Config{Config: convertOrderedMapToMap(auxConfig.Config)}
@@ -234,6 +240,34 @@ func convertToConfig(property map[string]interface{}) map[string]interface{} {
 	}
 
 	return config
+}
+
+func convertMapToOrderedMap(value interface{}) interface{} {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		// For regular maps (from merge operations), we can't preserve original order
+		// since Go maps have random iteration. We'll just use the iteration order.
+		om := newOrderedMap()
+		for key, val := range v {
+			om.Set(key, convertMapToOrderedMap(val))
+		}
+		return om
+	case *OrderedMap:
+		// OrderedMap is already in the right format, but recursively process values
+		om := newOrderedMap()
+		for _, key := range v.Keys {
+			om.Set(key, convertMapToOrderedMap(v.Values[key]))
+		}
+		return om
+	case []interface{}:
+		result := make([]interface{}, len(v))
+		for i, item := range v {
+			result[i] = convertMapToOrderedMap(item)
+		}
+		return result
+	default:
+		return v
+	}
 }
 
 func convertOrderedMapToMap(value interface{}) interface{} {
@@ -395,8 +429,17 @@ func mergeConfig(root map[string]interface{}) (map[string]interface{}, error) {
 	}
 
 	var raw map[string]interface{}
-	if err := json.Unmarshal(input, &raw); err != nil {
-		return root, err
+
+	// Use the same order-preserving JSON parsing as loadConfig
+	rawOrderedMap, err := parseJSONWithOrder(input)
+	if err != nil {
+		// If JSON parsing fails, fall back to regular JSON parsing
+		if err := json.Unmarshal(input, &raw); err != nil {
+			return root, err
+		}
+	} else {
+		// Convert OrderedMap to regular map for merging
+		raw = convertOrderedMapToMap(rawOrderedMap).(map[string]interface{})
 	}
 
 	if _, ok := raw["config"]; ok {
@@ -456,6 +499,291 @@ func (om *OrderedMap) Get(key string) (interface{}, bool) {
 	return value, exists
 }
 
+func parseJSONWithOrder(data []byte) (interface{}, error) {
+	// Parse the JSON while preserving key order using a custom decoder
+	rootValue, err := parseJSONValue(string(data))
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract the config section
+	if rootMap, ok := rootValue.(*OrderedMap); ok {
+		if configValue, exists := rootMap.Get("config"); exists {
+			return configValue, nil
+		}
+	}
+
+	return nil, fmt.Errorf("config section not found")
+}
+
+func parseJSONValue(jsonStr string) (interface{}, error) {
+	jsonStr = strings.TrimSpace(jsonStr)
+
+	if len(jsonStr) == 0 {
+		return nil, fmt.Errorf("empty JSON")
+	}
+
+	switch jsonStr[0] {
+	case '{':
+		return parseJSONObject(jsonStr)
+	case '[':
+		return parseJSONArray(jsonStr)
+	case '"':
+		return parseJSONString(jsonStr)
+	case 't':
+		if strings.HasPrefix(jsonStr, "true") {
+			return true, nil
+		}
+		return nil, fmt.Errorf("invalid JSON value: %s", jsonStr)
+	case 'f':
+		if strings.HasPrefix(jsonStr, "false") {
+			return false, nil
+		}
+		return nil, fmt.Errorf("invalid JSON value: %s", jsonStr)
+	case 'n':
+		if strings.HasPrefix(jsonStr, "null") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("invalid JSON value: %s", jsonStr)
+	default:
+		// Try to parse as number
+		return parseJSONNumber(jsonStr)
+	}
+}
+
+func parseJSONObject(jsonStr string) (*OrderedMap, error) {
+	if !strings.HasPrefix(jsonStr, "{") || !strings.HasSuffix(jsonStr, "}") {
+		return nil, fmt.Errorf("invalid JSON object")
+	}
+
+	om := newOrderedMap()
+	content := strings.TrimSpace(jsonStr[1 : len(jsonStr)-1])
+
+	if content == "" {
+		return om, nil
+	}
+
+	// Parse key-value pairs while preserving order
+	i := 0
+	for i < len(content) {
+		// Skip whitespace
+		for i < len(content) && (content[i] == ' ' || content[i] == '\t' || content[i] == '\n' || content[i] == '\r') {
+			i++
+		}
+		if i >= len(content) {
+			break
+		}
+
+		// Parse key
+		if content[i] != '"' {
+			return nil, fmt.Errorf("expected quoted key")
+		}
+
+		keyEnd := i + 1
+		for keyEnd < len(content) && content[keyEnd] != '"' {
+			if content[keyEnd] == '\\' {
+				keyEnd++ // Skip escaped character
+			}
+			keyEnd++
+		}
+		if keyEnd >= len(content) {
+			return nil, fmt.Errorf("unterminated string")
+		}
+
+		key := content[i+1 : keyEnd]
+		i = keyEnd + 1
+
+		// Skip whitespace and colon
+		for i < len(content) && (content[i] == ' ' || content[i] == '\t' || content[i] == '\n' || content[i] == '\r') {
+			i++
+		}
+		if i >= len(content) || content[i] != ':' {
+			return nil, fmt.Errorf("expected colon after key")
+		}
+		i++
+
+		// Find the value
+		for i < len(content) && (content[i] == ' ' || content[i] == '\t' || content[i] == '\n' || content[i] == '\r') {
+			i++
+		}
+
+		valueStart := i
+		valueEnd := findJSONValueEnd(content, i)
+		if valueEnd == -1 {
+			return nil, fmt.Errorf("invalid value")
+		}
+
+		valueStr := content[valueStart:valueEnd]
+		value, err := parseJSONValue(valueStr)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing value for key %s: %v", key, err)
+		}
+
+		om.Set(key, value)
+		i = valueEnd
+
+		// Skip whitespace
+		for i < len(content) && (content[i] == ' ' || content[i] == '\t' || content[i] == '\n' || content[i] == '\r') {
+			i++
+		}
+
+		// Check for comma or end
+		if i < len(content) {
+			if content[i] == ',' {
+				i++
+			} else if i < len(content) {
+				return nil, fmt.Errorf("expected comma or end of object")
+			}
+		}
+	}
+
+	return om, nil
+}
+
+func parseJSONArray(jsonStr string) ([]interface{}, error) {
+	if !strings.HasPrefix(jsonStr, "[") || !strings.HasSuffix(jsonStr, "]") {
+		return nil, fmt.Errorf("invalid JSON array")
+	}
+
+	content := strings.TrimSpace(jsonStr[1 : len(jsonStr)-1])
+	if content == "" {
+		return []interface{}{}, nil
+	}
+
+	var result []interface{}
+	i := 0
+
+	for i < len(content) {
+		// Skip whitespace
+		for i < len(content) && (content[i] == ' ' || content[i] == '\t' || content[i] == '\n' || content[i] == '\r') {
+			i++
+		}
+		if i >= len(content) {
+			break
+		}
+
+		valueEnd := findJSONValueEnd(content, i)
+		if valueEnd == -1 {
+			return nil, fmt.Errorf("invalid array value")
+		}
+
+		valueStr := content[i:valueEnd]
+		value, err := parseJSONValue(valueStr)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing array value: %v", err)
+		}
+
+		result = append(result, value)
+		i = valueEnd
+
+		// Skip whitespace
+		for i < len(content) && (content[i] == ' ' || content[i] == '\t' || content[i] == '\n' || content[i] == '\r') {
+			i++
+		}
+
+		// Check for comma
+		if i < len(content) && content[i] == ',' {
+			i++
+		}
+	}
+
+	return result, nil
+}
+
+func parseJSONString(jsonStr string) (string, error) {
+	if len(jsonStr) < 2 || !strings.HasPrefix(jsonStr, "\"") || !strings.HasSuffix(jsonStr, "\"") {
+		return "", fmt.Errorf("invalid JSON string")
+	}
+
+	// Simple unescaping - for a full implementation you'd need to handle all escape sequences
+	content := jsonStr[1 : len(jsonStr)-1]
+	content = strings.ReplaceAll(content, "\\\"", "\"")
+	content = strings.ReplaceAll(content, "\\\\", "\\")
+	content = strings.ReplaceAll(content, "\\n", "\n")
+	content = strings.ReplaceAll(content, "\\r", "\r")
+	content = strings.ReplaceAll(content, "\\t", "\t")
+
+	return content, nil
+}
+
+func parseJSONNumber(jsonStr string) (interface{}, error) {
+	jsonStr = strings.TrimSpace(jsonStr)
+
+	// Try to parse as integer first
+	if strings.Contains(jsonStr, ".") {
+		// Parse as float
+		var f float64
+		err := json.Unmarshal([]byte(jsonStr), &f)
+		return f, err
+	} else {
+		// Parse as integer
+		var i int
+		err := json.Unmarshal([]byte(jsonStr), &i)
+		return i, err
+	}
+}
+
+func findJSONValueEnd(content string, start int) int {
+	if start >= len(content) {
+		return -1
+	}
+
+	switch content[start] {
+	case '"':
+		// Find end of string
+		i := start + 1
+		for i < len(content) {
+			if content[i] == '"' && (i == start+1 || content[i-1] != '\\') {
+				return i + 1
+			}
+			if content[i] == '\\' {
+				i++ // Skip escaped character
+			}
+			i++
+		}
+		return -1
+	case '{':
+		// Find end of object
+		depth := 0
+		for i := start; i < len(content); i++ {
+			if content[i] == '{' {
+				depth++
+			} else if content[i] == '}' {
+				depth--
+				if depth == 0 {
+					return i + 1
+				}
+			}
+		}
+		return -1
+	case '[':
+		// Find end of array
+		depth := 0
+		for i := start; i < len(content); i++ {
+			if content[i] == '[' {
+				depth++
+			} else if content[i] == ']' {
+				depth--
+				if depth == 0 {
+					return i + 1
+				}
+			}
+		}
+		return -1
+	default:
+		// Find end of primitive value (number, boolean, null)
+		i := start
+		for i < len(content) && content[i] != ',' && content[i] != '}' && content[i] != ']' {
+			i++
+		}
+		// Trim trailing whitespace
+		for i > start && (content[i-1] == ' ' || content[i-1] == '\t' || content[i-1] == '\n' || content[i-1] == '\r') {
+			i--
+		}
+		return i
+	}
+}
+
 func nodeToOrderedMap(node *yaml.Node) (interface{}, error) {
 	switch node.Kind {
 	case yaml.MappingNode:
@@ -511,6 +839,17 @@ func printValueWithContext(configValue interface{}, inObject bool) {
 			printValueWithContext(value.Values[key], true)
 		}
 		fmt.Print("}")
+	case OrderedMap:
+		fmt.Print("{")
+		for i, key := range value.Keys {
+			if i > 0 {
+				fmt.Print(",")
+			}
+			keyJSON, _ := json.Marshal(key)
+			fmt.Printf("%s:", keyJSON)
+			printValueWithContext(value.Values[key], true)
+		}
+		fmt.Print("}")
 	case []interface{}:
 		// Handle arrays (including arrays of OrderedMap objects)
 		fmt.Print("[")
@@ -522,8 +861,13 @@ func printValueWithContext(configValue interface{}, inObject bool) {
 		}
 		fmt.Print("]")
 	case map[string]interface{}:
-		// Convert regular map to OrderedMap if possible, otherwise use regular JSON
-		data, _ := json.Marshal(value)
+		// For regular maps, we need to handle nested OrderedMaps properly
+		// Convert any nested OrderedMaps to regular maps first, then marshal
+		convertedMap := make(map[string]interface{})
+		for key, val := range value {
+			convertedMap[key] = convertOrderedMapToMap(val)
+		}
+		data, _ := json.Marshal(convertedMap)
 		fmt.Print(string(data))
 	case Aux4Config:
 		printValueWithContext(value.Config, inObject)

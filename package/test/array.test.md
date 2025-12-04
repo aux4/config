@@ -460,20 +460,20 @@ aux4 config get servers | jq .
 ```expect
 [
   {
-    "host": "localhost",
     "name": "web-server",
+    "host": "localhost",
     "port": 8080,
     "ssl": false
   },
   {
-    "host": "api.example.com",
     "name": "api-server",
+    "host": "api.example.com",
     "port": 443,
     "ssl": true
   },
   {
-    "host": "db.example.com",
     "name": "db-server",
+    "host": "db.example.com",
     "port": 5432,
     "ssl": true
   }
@@ -493,20 +493,20 @@ aux4 config get users | jq .
   {
     "id": 1,
     "name": "admin",
+    "role": "administrator",
     "permissions": [
       "read",
       "write",
       "delete"
-    ],
-    "role": "administrator"
+    ]
   },
   {
     "id": 2,
     "name": "user",
+    "role": "viewer",
     "permissions": [
       "read"
-    ],
-    "role": "viewer"
+    ]
   }
 ]
 ```
@@ -574,6 +574,11 @@ aux4 config get deployment/stages | jq .
 ```expect
 [
   {
+    "name": "test",
+    "services": [
+      "web",
+      "api"
+    ],
     "environments": [
       {
         "host": "test.example.com",
@@ -583,14 +588,15 @@ aux4 config get deployment/stages | jq .
         "host": "test2.example.com",
         "replicas": 1
       }
-    ],
-    "name": "test",
-    "services": [
-      "web",
-      "api"
     ]
   },
   {
+    "name": "production",
+    "services": [
+      "web",
+      "api",
+      "worker"
+    ],
     "environments": [
       {
         "host": "prod1.example.com",
@@ -604,12 +610,6 @@ aux4 config get deployment/stages | jq .
         "host": "prod3.example.com",
         "replicas": 2
       }
-    ],
-    "name": "production",
-    "services": [
-      "web",
-      "api",
-      "worker"
     ]
   }
 ]

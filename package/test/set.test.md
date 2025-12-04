@@ -23,7 +23,7 @@
 
 ```execute
 aux4 config set --name dev/host --value 127.0.0.1
-cat config.json
+cat config.json | jq .
 ```
 
 ```expect
@@ -47,7 +47,7 @@ cat config.json
 
 ```execute
 aux4 config set --name dev/protocol/type --value http
-cat config.json
+cat config.json | jq .
 ```
 
 ```expect

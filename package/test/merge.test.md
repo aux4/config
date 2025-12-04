@@ -49,7 +49,7 @@ aux4 config get --file file2.json | aux4 config merge --file file1.json | jq .
 ##### file1 should not be changed
 
 ```execute
-cat file1.json
+cat file1.json | jq .
 ```
 
 ```expect
