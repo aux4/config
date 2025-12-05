@@ -13,7 +13,6 @@
 }
 ```
 
-
 ```file:file2.json
 {
   "config": {

@@ -5,17 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Aux4Config struct {
-	Config interface{} `json:"config" yaml:"config"`
+	Config any `json:"config" yaml:"config"`
 }
 
 // findConfigFile finds the first config file in order of preference
 func findConfigFile() string {
-	files := []string{"config.json", "config.yaml", "config.yml"}
+	files := []string{"config.yaml", "config.yml", "config.json"}
 	for _, file := range files {
 		if _, err := os.Stat(file); err == nil {
 			return file
@@ -84,7 +85,7 @@ func saveConfig(filename string, auxConfig Aux4Config) error {
 	switch filepath.Ext(filename) {
 	case ".json":
 		// Convert OrderedMap to regular map for saving
-		config := make(map[string]interface{})
+		config := make(map[string]any)
 		config["config"] = convertOrderedMapToMap(auxConfig.Config)
 
 		data, err := json.Marshal(config)
@@ -93,14 +94,17 @@ func saveConfig(filename string, auxConfig Aux4Config) error {
 		}
 		return os.WriteFile(filename, data, 0644)
 	case ".yaml", ".yml":
-		// Convert OrderedMap to regular map for saving
-		config := make(map[string]interface{})
-		config["config"] = convertOrderedMapToMap(auxConfig.Config)
-
-		data, err := yaml.Marshal(config)
+		// Convert OrderedMap back to regular maps for proper YAML serialization
+		configForSave := Aux4Config{Config: convertOrderedMapToMap(auxConfig.Config)}
+		var buf strings.Builder
+		encoder := yaml.NewEncoder(&buf)
+		encoder.SetIndent(2)
+		err := encoder.Encode(configForSave)
+		encoder.Close()
 		if err != nil {
 			return err
 		}
+		data := []byte(buf.String())
 		return os.WriteFile(filename, data, 0644)
 	default:
 		return fmt.Errorf("unsupported file format")
@@ -108,10 +112,10 @@ func saveConfig(filename string, auxConfig Aux4Config) error {
 }
 
 // convertToConfig wraps a property in a config structure
-func convertToConfig(property map[string]interface{}) map[string]interface{} {
-	config := make(map[string]interface{})
+func convertToConfig(property map[string]any) map[string]any {
+	config := make(map[string]any)
 	for key, value := range property {
-		if nestedProperty, ok := value.(map[string]interface{}); ok {
+		if nestedProperty, ok := value.(map[string]any); ok {
 			config[key] = convertToConfig(nestedProperty)
 		} else {
 			config[key] = value

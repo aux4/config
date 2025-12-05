@@ -13,7 +13,15 @@ func main() {
 	}
 
 	// Find config file
-	configFile := findConfigFile()
+	configFile := ""
+	if len(os.Args) > 2 {
+		configFile = os.Args[2]
+	}
+
+	if configFile == "" {
+		configFile = findConfigFile()
+	}
+
 	if configFile == "" {
 		fmt.Fprintf(os.Stderr, "Error: No config file found (config.json, config.yaml, or config.yml)\n")
 		os.Exit(1)

@@ -6,12 +6,12 @@ import (
 )
 
 // printValue prints a value in JSON format
-func printValue(configValue interface{}) {
+func printValue(configValue any) {
 	printValueWithContext(configValue, false)
 }
 
 // printValueWithContext prints a value with context about whether it's inside an object
-func printValueWithContext(configValue interface{}, inObject bool) {
+func printValueWithContext(configValue any, inObject bool) {
 	switch value := configValue.(type) {
 	case *OrderedMap:
 		fmt.Print("{")
@@ -24,7 +24,7 @@ func printValueWithContext(configValue interface{}, inObject bool) {
 			printValueWithContext(value.Values[key], true)
 		}
 		fmt.Print("}")
-	case []interface{}:
+	case []any:
 		// Handle arrays (including arrays of OrderedMap objects)
 		fmt.Print("[")
 		for i, item := range value {
@@ -34,14 +34,35 @@ func printValueWithContext(configValue interface{}, inObject bool) {
 			printValueWithContext(item, true)
 		}
 		fmt.Print("]")
-	case map[string]interface{}:
-		// For regular maps, convert any nested OrderedMaps properly then marshal
-		convertedMap := make(map[string]interface{})
-		for key, val := range value {
-			convertedMap[key] = convertOrderedMapToMap(val)
+	case map[string]any:
+		// For regular maps, print in sorted order for deterministic output
+		fmt.Print("{")
+
+		// Get keys and sort them for deterministic iteration
+		var keys []string
+		for key := range value {
+			keys = append(keys, key)
 		}
-		data, _ := json.Marshal(convertedMap)
-		fmt.Print(string(data))
+
+		// Simple sort (bubble sort for simplicity)
+		for i := 0; i < len(keys); i++ {
+			for j := i + 1; j < len(keys); j++ {
+				if keys[i] > keys[j] {
+					keys[i], keys[j] = keys[j], keys[i]
+				}
+			}
+		}
+
+		// Print in sorted order
+		for i, key := range keys {
+			if i > 0 {
+				fmt.Print(",")
+			}
+			keyJSON, _ := json.Marshal(key)
+			fmt.Printf("%s:", keyJSON)
+			printValueWithContext(value[key], true)
+		}
+		fmt.Print("}")
 	case Aux4Config:
 		printValueWithContext(value.Config, inObject)
 	case string:

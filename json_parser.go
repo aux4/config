@@ -8,7 +8,7 @@ import (
 )
 
 // parseJSONWithOrder parses JSON while preserving key order
-func parseJSONWithOrder(data []byte) (interface{}, error) {
+func parseJSONWithOrder(data []byte) (any, error) {
 	// Parse the JSON while preserving key order using a custom decoder
 	rootValue, err := parseJSONValue(string(data))
 	if err != nil {
@@ -26,7 +26,7 @@ func parseJSONWithOrder(data []byte) (interface{}, error) {
 }
 
 // parseJSONValue parses a JSON value while preserving order
-func parseJSONValue(jsonStr string) (interface{}, error) {
+func parseJSONValue(jsonStr string) (any, error) {
 	jsonStr = strings.TrimSpace(jsonStr)
 
 	if len(jsonStr) == 0 {
@@ -78,7 +78,7 @@ func parseJSONObject(jsonStr string) (*OrderedMap, error) {
 
 		// Parse key
 		if content[pos] != '"' {
-			return nil, fmt.Errorf("expected quoted key at position %d", pos)
+			return nil, fmt.Errorf("expected quoted key")
 		}
 
 		keyEnd := pos + 1
@@ -147,7 +147,7 @@ func parseJSONObject(jsonStr string) (*OrderedMap, error) {
 }
 
 // parseJSONArray parses a JSON array
-func parseJSONArray(jsonStr string) ([]interface{}, error) {
+func parseJSONArray(jsonStr string) ([]any, error) {
 	jsonStr = strings.TrimSpace(jsonStr)
 	if !strings.HasPrefix(jsonStr, "[") || !strings.HasSuffix(jsonStr, "]") {
 		return nil, fmt.Errorf("invalid JSON array")
@@ -157,10 +157,10 @@ func parseJSONArray(jsonStr string) ([]interface{}, error) {
 	content = strings.TrimSpace(content)
 
 	if content == "" {
-		return []interface{}{}, nil
+		return []any{}, nil
 	}
 
-	var result []interface{}
+	var result []any
 	pos := 0
 
 	for pos < len(content) {
@@ -277,7 +277,7 @@ func parseJSONString(jsonStr string) (string, error) {
 }
 
 // parseJSONNumber parses a JSON number
-func parseJSONNumber(jsonStr string) (interface{}, error) {
+func parseJSONNumber(jsonStr string) (any, error) {
 	if strings.Contains(jsonStr, ".") {
 		return strconv.ParseFloat(jsonStr, 64)
 	}
@@ -295,7 +295,7 @@ func parseJSONBoolean(jsonStr string) (bool, error) {
 }
 
 // parseJSONNull parses a JSON null
-func parseJSONNull(jsonStr string) (interface{}, error) {
+func parseJSONNull(jsonStr string) (any, error) {
 	if jsonStr == "null" {
 		return nil, nil
 	}

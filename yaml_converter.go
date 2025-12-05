@@ -33,12 +33,12 @@ func nodeToOrderedMap(node *yaml.Node) (*OrderedMap, error) {
 }
 
 // convertYAMLNode converts a YAML node to the appropriate Go type
-func convertYAMLNode(node *yaml.Node) (interface{}, error) {
+func convertYAMLNode(node *yaml.Node) (any, error) {
 	switch node.Kind {
 	case yaml.MappingNode:
 		return nodeToOrderedMap(node)
 	case yaml.SequenceNode:
-		var result []interface{}
+		var result []any
 		for _, child := range node.Content {
 			value, err := convertYAMLNode(child)
 			if err != nil {
@@ -48,48 +48,12 @@ func convertYAMLNode(node *yaml.Node) (interface{}, error) {
 		}
 		return result, nil
 	case yaml.ScalarNode:
-		var value interface{}
+		var value any
 		if err := node.Decode(&value); err != nil {
 			return nil, err
 		}
 		return value, nil
 	default:
 		return nil, fmt.Errorf("unsupported YAML node kind: %v", node.Kind)
-	}
-}
-
-// convertYAMLNodeToOrderedMap converts a YAML node to an OrderedMap (legacy function)
-func convertYAMLNodeToOrderedMap(node *yaml.Node) interface{} {
-	switch node.Kind {
-	case yaml.DocumentNode:
-		if len(node.Content) > 0 {
-			return convertYAMLNodeToOrderedMap(node.Content[0])
-		}
-		return newOrderedMap()
-	case yaml.MappingNode:
-		result := newOrderedMap()
-		for i := 0; i < len(node.Content); i += 2 {
-			keyNode := node.Content[i]
-			valueNode := node.Content[i+1]
-
-			var key string
-			keyNode.Decode(&key)
-
-			value := convertYAMLNodeToOrderedMap(valueNode)
-			result.Set(key, value)
-		}
-		return result
-	case yaml.SequenceNode:
-		var result []interface{}
-		for _, child := range node.Content {
-			result = append(result, convertYAMLNodeToOrderedMap(child))
-		}
-		return result
-	case yaml.ScalarNode:
-		var value interface{}
-		node.Decode(&value)
-		return value
-	default:
-		return nil
 	}
 }
