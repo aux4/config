@@ -15,18 +15,18 @@ config:
 You can get the __dev__ configuration with:
 
 ```bash
-> aux4 config get --name dev/host
-```
-```bash
-localhost
-```
-
-You can also use the `--name` as an argument instead of parameter:
-
-```bash
 > aux4 config get dev/host
 ```
 ```bash
 localhost
+```
+
+You can also specify a different config file with the `--file` flag:
+
+```bash
+> aux4 config get --file second.yaml dev/host
+```
+```bash
+127.0.0.1
 ```
 

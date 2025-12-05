@@ -23,7 +23,7 @@ config:
 You can merge them with:
 
 ```bash
-> aux4 config get --file dev.yaml | aux4 config merge --file prod.yaml > config.json
+> aux4 config get --file dev.yaml | aux4 config merge --file prod.yaml | jq .
 ```
 
 You can merge any JSON to your configuration file as well.
@@ -33,4 +33,54 @@ using the `--save` flag. It will keep the current file format (either JSON or YA
 
 ```bash
 > aux4 config get --file dev.yaml | aux4 config merge --file prod.yaml --save
+```
+
+You can also merge into a specific path within the configuration.
+
+For example, if you have a database configuration file:
+
+db.json:
+```json
+{
+  "host": "localhost",
+  "port": 5432,
+  "user": "postgres",
+  "password": "postgres",
+  "database": "postgres"
+}
+```
+
+And a main config file:
+
+config.json:
+```json
+{
+  "config": {
+    "dev": {
+      "host": "localhost",
+      "port": 3000
+    }
+  }
+}
+```
+
+You can merge the database config into the dev section:
+
+```bash
+> cat db.json | aux4 config merge --file config.json --name dev/db | jq .
+```
+```json
+{
+  "dev": {
+    "db": {
+      "database": "postgres",
+      "host": "localhost",
+      "password": "postgres",
+      "port": 5432,
+      "user": "postgres"
+    },
+    "host": "localhost",
+    "port": 3000
+  }
+}
 ```

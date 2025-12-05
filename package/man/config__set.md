@@ -17,3 +17,9 @@ You can set the __dev/host__ configuration with:
 ```bash
 > aux4 config set --name dev/host --value 127.0.0.1
 ```
+
+You can also specify a different config file with the `--file` flag:
+
+```bash
+> aux4 config set --file config.yaml --name dev/host --value 127.0.0.1
+```
