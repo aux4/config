@@ -6,7 +6,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// nodeToOrderedMap converts a YAML node to an OrderedMap
 func nodeToOrderedMap(node *yaml.Node) (*OrderedMap, error) {
 	result := newOrderedMap()
 
@@ -32,7 +31,6 @@ func nodeToOrderedMap(node *yaml.Node) (*OrderedMap, error) {
 	return result, nil
 }
 
-// convertYAMLNode converts a YAML node to the appropriate Go type
 func convertYAMLNode(node *yaml.Node) (any, error) {
 	switch node.Kind {
 	case yaml.MappingNode:

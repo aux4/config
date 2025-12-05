@@ -12,7 +12,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Find config file
 	configFile := ""
 	if len(os.Args) > 2 {
 		configFile = os.Args[2]
@@ -27,14 +26,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Load config
 	aux4Config, err := loadConfig(configFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Handle commands
 	command := os.Args[1]
 	switch command {
 	case "get":

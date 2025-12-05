@@ -7,9 +7,8 @@ import (
 	"strings"
 )
 
-// OrderedMap maintains the order of keys as they are added
 type OrderedMap struct {
-	Keys   []string                 `json:"Keys"`
+	Keys   []string       `json:"Keys"`
 	Values map[string]any `json:"Values"`
 }
 
@@ -32,8 +31,6 @@ func (om *OrderedMap) Get(key string) (any, bool) {
 	return value, exists
 }
 
-// MarshalJSON implements json.Marshaler interface for OrderedMap
-// This ensures JSON output respects the key order defined in om.Keys
 func (om *OrderedMap) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteByte('{')
@@ -43,7 +40,6 @@ func (om *OrderedMap) MarshalJSON() ([]byte, error) {
 			buf.WriteByte(',')
 		}
 
-		// Marshal the key
 		keyBytes, err := json.Marshal(key)
 		if err != nil {
 			return nil, err
@@ -51,7 +47,6 @@ func (om *OrderedMap) MarshalJSON() ([]byte, error) {
 		buf.Write(keyBytes)
 		buf.WriteByte(':')
 
-		// Marshal the value - wrap in DeterministicMap if needed
 		value := wrapForDeterministicJSON(om.Values[key])
 		valueBytes, err := json.Marshal(value)
 		if err != nil {
@@ -64,17 +59,13 @@ func (om *OrderedMap) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// UnmarshalJSON implements json.Unmarshaler interface for OrderedMap
-// This preserves key order during JSON parsing by using a streaming decoder
 func (om *OrderedMap) UnmarshalJSON(data []byte) error {
-	// Reset the OrderedMap
 	om.Keys = []string{}
 	om.Values = make(map[string]any)
 
 	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber() // Preserve number precision
+	decoder.UseNumber()
 
-	// Read opening brace
 	token, err := decoder.Token()
 	if err != nil {
 		return err
@@ -83,9 +74,7 @@ func (om *OrderedMap) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("expected '{', got %T", token)
 	}
 
-	// Read key-value pairs in order
 	for decoder.More() {
-		// Read key
 		keyToken, err := decoder.Token()
 		if err != nil {
 			return err
@@ -95,7 +84,6 @@ func (om *OrderedMap) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("expected string key, got %T", keyToken)
 		}
 
-		// Read value using our custom decoder to preserve order
 		value, err := unmarshalOrderedValue(decoder)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal value for key '%s': %v", key, err)
@@ -104,7 +92,6 @@ func (om *OrderedMap) UnmarshalJSON(data []byte) error {
 		om.Set(key, value)
 	}
 
-	// Read closing brace
 	token, err = decoder.Token()
 	if err != nil {
 		return err
@@ -116,7 +103,6 @@ func (om *OrderedMap) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// unmarshalOrderedValue reads a JSON value preserving order for objects
 func unmarshalOrderedValue(decoder *json.Decoder) (any, error) {
 	token, err := decoder.Token()
 	if err != nil {
@@ -127,10 +113,8 @@ func unmarshalOrderedValue(decoder *json.Decoder) (any, error) {
 	case json.Delim:
 		switch t {
 		case '{':
-			// Object - create OrderedMap
 			om := newOrderedMap()
 			for decoder.More() {
-				// Read key
 				keyToken, err := decoder.Token()
 				if err != nil {
 					return nil, err
@@ -140,7 +124,6 @@ func unmarshalOrderedValue(decoder *json.Decoder) (any, error) {
 					return nil, fmt.Errorf("expected string key, got %T", keyToken)
 				}
 
-				// Read value recursively
 				value, err := unmarshalOrderedValue(decoder)
 				if err != nil {
 					return nil, err
@@ -149,7 +132,6 @@ func unmarshalOrderedValue(decoder *json.Decoder) (any, error) {
 				om.Set(key, value)
 			}
 
-			// Read closing brace
 			closingToken, err := decoder.Token()
 			if err != nil {
 				return nil, err
@@ -161,7 +143,6 @@ func unmarshalOrderedValue(decoder *json.Decoder) (any, error) {
 			return om, nil
 
 		case '[':
-			// Array
 			var result []any
 			for decoder.More() {
 				value, err := unmarshalOrderedValue(decoder)
@@ -171,7 +152,6 @@ func unmarshalOrderedValue(decoder *json.Decoder) (any, error) {
 				result = append(result, value)
 			}
 
-			// Read closing bracket
 			closingToken, err := decoder.Token()
 			if err != nil {
 				return nil, err
@@ -187,7 +167,6 @@ func unmarshalOrderedValue(decoder *json.Decoder) (any, error) {
 		}
 
 	case json.Number:
-		// Handle numbers
 		str := string(t)
 		if strings.Contains(str, ".") {
 			return t.Float64()
@@ -209,21 +188,17 @@ func unmarshalOrderedValue(decoder *json.Decoder) (any, error) {
 	}
 }
 
-// DeterministicMap wraps a regular map to ensure deterministic JSON marshaling
 type DeterministicMap map[string]any
 
-// MarshalJSON implements json.Marshaler interface for DeterministicMap
 func (dm DeterministicMap) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteByte('{')
 
-	// Get keys and sort them for deterministic iteration
 	var keys []string
 	for key := range dm {
 		keys = append(keys, key)
 	}
 
-	// Simple sort (bubble sort for simplicity)
 	for i := 0; i < len(keys); i++ {
 		for j := i + 1; j < len(keys); j++ {
 			if keys[i] > keys[j] {
@@ -232,13 +207,11 @@ func (dm DeterministicMap) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	// Marshal in sorted order
 	for i, key := range keys {
 		if i > 0 {
 			buf.WriteByte(',')
 		}
 
-		// Marshal the key
 		keyBytes, err := json.Marshal(key)
 		if err != nil {
 			return nil, err
@@ -246,7 +219,6 @@ func (dm DeterministicMap) MarshalJSON() ([]byte, error) {
 		buf.Write(keyBytes)
 		buf.WriteByte(':')
 
-		// Marshal the value - wrap in DeterministicMap if needed
 		value := wrapForDeterministicJSON(dm[key])
 		valueBytes, err := json.Marshal(value)
 		if err != nil {
@@ -259,13 +231,11 @@ func (dm DeterministicMap) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// wrapForDeterministicJSON wraps values to ensure deterministic JSON output
 func wrapForDeterministicJSON(value any) any {
 	switch v := value.(type) {
 	case map[string]any:
 		return DeterministicMap(v)
 	case []any:
-		// Wrap array elements
 		wrapped := make([]any, len(v))
 		for i, item := range v {
 			wrapped[i] = wrapForDeterministicJSON(item)
@@ -276,21 +246,16 @@ func wrapForDeterministicJSON(value any) any {
 	}
 }
 
-// convertMapToOrderedMap converts a regular map to an OrderedMap recursively
 func convertMapToOrderedMap(value any) any {
 	switch v := value.(type) {
 	case map[string]any:
-		// For regular maps (from merge operations), we can't preserve original order
-		// since Go maps have random iteration. Sort keys for deterministic order.
 		om := newOrderedMap()
 
-		// Get keys and sort them for deterministic iteration
 		var keys []string
 		for key := range v {
 			keys = append(keys, key)
 		}
 
-		// Simple sort (bubble sort for simplicity)
 		for i := 0; i < len(keys); i++ {
 			for j := i + 1; j < len(keys); j++ {
 				if keys[i] > keys[j] {
@@ -299,13 +264,11 @@ func convertMapToOrderedMap(value any) any {
 			}
 		}
 
-		// Set values in sorted key order
 		for _, key := range keys {
 			om.Set(key, convertMapToOrderedMap(v[key]))
 		}
 		return om
 	case *OrderedMap:
-		// OrderedMap is already in the right format, but recursively process values
 		om := newOrderedMap()
 		for _, key := range v.Keys {
 			om.Set(key, convertMapToOrderedMap(v.Values[key]))
@@ -322,7 +285,6 @@ func convertMapToOrderedMap(value any) any {
 	}
 }
 
-// convertOrderedMapToMap converts an OrderedMap back to a regular map recursively
 func convertOrderedMapToMap(value any) any {
 	switch v := value.(type) {
 	case *OrderedMap:
@@ -342,7 +304,6 @@ func convertOrderedMapToMap(value any) any {
 	}
 }
 
-// getNestedValueFromOrderedMap retrieves a nested value from OrderedMap structures
 func getNestedValueFromOrderedMap(value any, path string) (any, bool) {
 	if path == "" {
 		return value, true
@@ -372,19 +333,12 @@ func getNestedValueFromOrderedMap(value any, path string) (any, bool) {
 	return current, true
 }
 
-// setNestedValueInOrderedMap sets a nested value in OrderedMap structures
 func setNestedValueInOrderedMap(config any, path string, value any) any {
-	// Convert to regular map, set the value, then convert back to OrderedMap
 	mapConfig := convertOrderedMapToMap(config)
-
-	// Use existing setNestedValue function
 	setNestedValue(mapConfig.(map[string]any), path, value)
-
-	// Convert back to OrderedMap
 	return convertMapToOrderedMap(mapConfig)
 }
 
-// setNestedValue sets a nested value in a regular map
 func setNestedValue(config map[string]any, path string, value any) {
 	keys := strings.Split(path, "/")
 	current := config

@@ -14,7 +14,6 @@ type Aux4Config struct {
 	Config any `json:"config" yaml:"config"`
 }
 
-// findConfigFile finds the first config file in order of preference
 func findConfigFile() string {
 	files := []string{"config.yaml", "config.yml", "config.json"}
 	for _, file := range files {
@@ -25,7 +24,6 @@ func findConfigFile() string {
 	return ""
 }
 
-// loadConfig loads configuration from a file
 func loadConfig(filename string) (Aux4Config, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
@@ -41,13 +39,11 @@ func loadConfig(filename string) (Aux4Config, error) {
 		}
 		auxConfig = Aux4Config{Config: config}
 	case ".yaml", ".yml":
-		// Use yaml.Node to preserve order, then convert to ordered map
 		var node yaml.Node
 		if err := yaml.Unmarshal(data, &node); err != nil {
 			return Aux4Config{}, err
 		}
 
-		// Find the config node
 		var configNode *yaml.Node
 		if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
 			rootNode := node.Content[0]
@@ -80,11 +76,9 @@ func loadConfig(filename string) (Aux4Config, error) {
 	return auxConfig, nil
 }
 
-// saveConfig saves configuration to a file
 func saveConfig(filename string, auxConfig Aux4Config) error {
 	switch filepath.Ext(filename) {
 	case ".json":
-		// Convert OrderedMap to regular map for saving
 		config := make(map[string]any)
 		config["config"] = convertOrderedMapToMap(auxConfig.Config)
 
@@ -94,7 +88,6 @@ func saveConfig(filename string, auxConfig Aux4Config) error {
 		}
 		return os.WriteFile(filename, data, 0644)
 	case ".yaml", ".yml":
-		// Convert OrderedMap back to regular maps for proper YAML serialization
 		configForSave := Aux4Config{Config: convertOrderedMapToMap(auxConfig.Config)}
 		var buf strings.Builder
 		encoder := yaml.NewEncoder(&buf)
@@ -111,7 +104,6 @@ func saveConfig(filename string, auxConfig Aux4Config) error {
 	}
 }
 
-// convertToConfig wraps a property in a config structure
 func convertToConfig(property map[string]any) map[string]any {
 	config := make(map[string]any)
 	for key, value := range property {
