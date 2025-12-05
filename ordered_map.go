@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -61,6 +62,151 @@ func (om *OrderedMap) MarshalJSON() ([]byte, error) {
 
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler interface for OrderedMap
+// This preserves key order during JSON parsing by using a streaming decoder
+func (om *OrderedMap) UnmarshalJSON(data []byte) error {
+	// Reset the OrderedMap
+	om.Keys = []string{}
+	om.Values = make(map[string]any)
+
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber() // Preserve number precision
+
+	// Read opening brace
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if delim, ok := token.(json.Delim); !ok || delim != '{' {
+		return fmt.Errorf("expected '{', got %T", token)
+	}
+
+	// Read key-value pairs in order
+	for decoder.More() {
+		// Read key
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return fmt.Errorf("expected string key, got %T", keyToken)
+		}
+
+		// Read value using our custom decoder to preserve order
+		value, err := unmarshalOrderedValue(decoder)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal value for key '%s': %v", key, err)
+		}
+
+		om.Set(key, value)
+	}
+
+	// Read closing brace
+	token, err = decoder.Token()
+	if err != nil {
+		return err
+	}
+	if delim, ok := token.(json.Delim); !ok || delim != '}' {
+		return fmt.Errorf("expected '}', got %T", token)
+	}
+
+	return nil
+}
+
+// unmarshalOrderedValue reads a JSON value preserving order for objects
+func unmarshalOrderedValue(decoder *json.Decoder) (any, error) {
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+
+	switch t := token.(type) {
+	case json.Delim:
+		switch t {
+		case '{':
+			// Object - create OrderedMap
+			om := newOrderedMap()
+			for decoder.More() {
+				// Read key
+				keyToken, err := decoder.Token()
+				if err != nil {
+					return nil, err
+				}
+				key, ok := keyToken.(string)
+				if !ok {
+					return nil, fmt.Errorf("expected string key, got %T", keyToken)
+				}
+
+				// Read value recursively
+				value, err := unmarshalOrderedValue(decoder)
+				if err != nil {
+					return nil, err
+				}
+
+				om.Set(key, value)
+			}
+
+			// Read closing brace
+			closingToken, err := decoder.Token()
+			if err != nil {
+				return nil, err
+			}
+			if delim, ok := closingToken.(json.Delim); !ok || delim != '}' {
+				return nil, fmt.Errorf("expected '}', got %T", closingToken)
+			}
+
+			return om, nil
+
+		case '[':
+			// Array
+			var result []any
+			for decoder.More() {
+				value, err := unmarshalOrderedValue(decoder)
+				if err != nil {
+					return nil, err
+				}
+				result = append(result, value)
+			}
+
+			// Read closing bracket
+			closingToken, err := decoder.Token()
+			if err != nil {
+				return nil, err
+			}
+			if delim, ok := closingToken.(json.Delim); !ok || delim != ']' {
+				return nil, fmt.Errorf("expected ']', got %T", closingToken)
+			}
+
+			return result, nil
+
+		default:
+			return nil, fmt.Errorf("unexpected delimiter: %v", t)
+		}
+
+	case json.Number:
+		// Handle numbers
+		str := string(t)
+		if strings.Contains(str, ".") {
+			return t.Float64()
+		} else {
+			return t.Int64()
+		}
+
+	case string:
+		return t, nil
+
+	case bool:
+		return t, nil
+
+	case nil:
+		return nil, nil
+
+	default:
+		return nil, fmt.Errorf("unexpected token type: %T", token)
+	}
 }
 
 // DeterministicMap wraps a regular map to ensure deterministic JSON marshaling

@@ -105,8 +105,8 @@ func mergeConfig(root map[string]any) (map[string]any, error) {
 	var raw any
 
 	// Parse JSON preserving order (stdin might not have "config" wrapper)
-	rawOrderedMap, err := parseJSONValue(string(input))
-	if err != nil {
+	var rawOrderedMap OrderedMap
+	if err := json.Unmarshal(input, &rawOrderedMap); err != nil {
 		// If JSON parsing fails, fall back to regular JSON parsing
 		var regularMap map[string]any
 		if err := json.Unmarshal(input, &regularMap); err != nil {
@@ -115,7 +115,7 @@ func mergeConfig(root map[string]any) (map[string]any, error) {
 		raw = regularMap
 	} else {
 		// Keep as OrderedMap to preserve order during merge
-		raw = rawOrderedMap
+		raw = &rawOrderedMap
 	}
 
 	// Handle extracting config from either OrderedMap or regular map

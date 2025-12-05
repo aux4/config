@@ -95,7 +95,7 @@ aux4 config get dev
 ```
 
 ```error
-Error loading config: expected quoted key
+Error loading config: failed to parse JSON: invalid character 'w' looking for beginning of object key string
 ```
 
 ## when file is wrong yaml
