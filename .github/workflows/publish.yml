@@ -75,32 +75,11 @@ jobs:
             --level ${{ steps.release_level.outputs.level }}
       
       - name: Get new version
-        id: version
         run: |
           VERSION=$(jq -r '.version' .aux4)
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "New version: ${VERSION}"
-      
+
       - name: Push changes and tags
         run: |
           git push origin main
           git push origin --tags
-      
-      - name: Create GitHub Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          PACKAGE_FILE="package/aux4-config-${VERSION}.zip"
-          
-          if [ -f "${PACKAGE_FILE}" ]; then
-            gh release create "v${VERSION}" \
-              "${PACKAGE_FILE}" \
-              --title "Release v${VERSION}" \
-              --notes "Automated release v${VERSION}"
-          else
-            echo "Warning: Package file ${PACKAGE_FILE} not found"
-            gh release create "v${VERSION}" \
-              --title "Release v${VERSION}" \
-              --notes "Automated release v${VERSION}"
-          fi
