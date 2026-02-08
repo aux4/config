@@ -1,0 +1,85 @@
+name: Publish Package
+
+on:
+  # Automatic trigger: Push to main branch
+  push:
+    branches:
+      - main
+    paths:
+      - '**'
+      - '!.github/**'
+      - '!README.md'
+      - '!LICENSE'
+      - '!.gitignore'
+  
+  # Manual trigger: Allow custom version bumps
+  workflow_dispatch:
+    inputs:
+      release_level:
+        description: 'Release level (patch, minor, major)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+# Prevent concurrent releases
+concurrency:
+  group: publish-package
+  cancel-in-progress: false
+
+# Minimal permissions
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Pull latest changes
+        run: |
+          git pull --rebase origin main
+      
+      - name: Set release level
+        id: release_level
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "level=${{ inputs.release_level }}" >> $GITHUB_OUTPUT
+          else
+            echo "level=patch" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Release package
+        env:
+          AUX4_ACCESS_TOKEN: ${{ secrets.AUX4_ACCESS_TOKEN }}
+        run: |
+          docker run --rm \
+            -v $(pwd):/workspace \
+            -w /workspace \
+            -e AUX4_ACCESS_TOKEN="${AUX4_ACCESS_TOKEN}" \
+            aux4/publisher:latest \
+            --level ${{ steps.release_level.outputs.level }}
+      
+      - name: Get new version
+        run: |
+          VERSION=$(jq -r '.version' .aux4)
+          echo "New version: ${VERSION}"
+
+      - name: Push changes and tags
+        run: |
+          git push origin main
+          git push origin --tags
