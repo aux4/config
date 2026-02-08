@@ -72,7 +72,7 @@ jobs:
             -w /workspace \
             -e AUX4_ACCESS_TOKEN="${AUX4_ACCESS_TOKEN}" \
             aux4/publisher:latest \
-            "aux4 aux4 releaser release --level ${{ steps.release_level.outputs.level }}"
+            --level ${{ steps.release_level.outputs.level }}
       
       - name: Get new version
         id: version
