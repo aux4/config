@@ -39,6 +39,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install aux4
+        run: curl https://aux4.sh | sh
+
+      - name: Build
+        run: aux4 build
+
       - name: Publish package
         uses: aux4/publish-package-action@v1
         with:
