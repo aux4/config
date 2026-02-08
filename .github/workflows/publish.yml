@@ -44,11 +44,19 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Install aux4
-        run: curl https://aux4.sh | sh
-
       - name: Build
-        run: aux4 build
+        run: |
+          # Darwin
+          GOOS=darwin GOARCH=amd64 go build -o package/dist/darwin/amd64/aux4-config .
+          GOOS=darwin GOARCH=arm64 go build -o package/dist/darwin/arm64/aux4-config .
+          # Linux
+          GOOS=linux GOARCH=amd64 go build -o package/dist/linux/amd64/aux4-config .
+          GOOS=linux GOARCH=arm64 go build -o package/dist/linux/arm64/aux4-config .
+          GOOS=linux GOARCH=386 go build -o package/dist/linux/386/aux4-config .
+          # Windows
+          GOOS=windows GOARCH=amd64 go build -o package/dist/windows/amd64/aux4-config.exe .
+          GOOS=windows GOARCH=arm64 go build -o package/dist/windows/arm64/aux4-config.exe .
+          GOOS=windows GOARCH=386 go build -o package/dist/windows/386/aux4-config.exe .
 
       - name: Publish package
         uses: aux4/publish-package-action@v1
