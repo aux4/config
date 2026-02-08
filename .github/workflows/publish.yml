@@ -71,8 +71,9 @@ jobs:
             -v $(pwd):/workspace \
             -w /workspace \
             -e AUX4_ACCESS_TOKEN="${AUX4_ACCESS_TOKEN}" \
+            --entrypoint bash \
             aux4/publisher:latest \
-            bash -c "git config --global --add safe.directory /workspace && aux4 aux4 releaser release --level ${{ steps.release_level.outputs.level }}"
+            -c "git config --global --add safe.directory /workspace && aux4 aux4 releaser release --level ${{ steps.release_level.outputs.level }}"
       
       - name: Get new version
         run: |
