@@ -1,7 +1,7 @@
 {
   "scope": "aux4",
   "name": "config",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "aux4 configuration utility",
   "license": "Apache-2.0",
   "tags": [
