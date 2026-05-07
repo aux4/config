@@ -1,4 +1,12 @@
-# aux4 config
+# aux4/config
+
+Configuration utility for aux4. Manage YAML and JSON configuration files with get, set, and merge operations.
+
+## Installation
+
+```bash
+aux4 aux4 pkger install aux4/config
+```
 
 ## Usage
 
