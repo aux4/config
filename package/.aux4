@@ -37,7 +37,8 @@
               {
                 "name": "file",
                 "text": "The configuration file to use",
-                "default": ""
+                "default": "",
+                "env": "AUX4_CONFIG_FILE"
               },
               {
                 "name": "name",
@@ -59,7 +60,8 @@
               {
                 "name": "file",
                 "text": "The configuration file to use",
-                "default": ""
+                "default": "",
+                "env": "AUX4_CONFIG_FILE"
               },
               {
                 "name": "name",
@@ -85,7 +87,8 @@
               {
                 "name": "file",
                 "text": "The configuration file to merge",
-                "default": ""
+                "default": "",
+                "env": "AUX4_CONFIG_FILE"
               },
               {
                 "name": "name",
