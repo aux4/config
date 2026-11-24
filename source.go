@@ -47,7 +47,11 @@ func commandVariables(command []string) ([]specVariable, error) {
 		if err != nil {
 			return nil, err
 		}
-		return parseCommandVariables(help)
+		var result struct{ Params []specVariable }
+		if err := json.Unmarshal(help, &result); err != nil {
+			return nil, fmt.Errorf("read built-in command help: %w", err)
+		}
+		return result.Params, nil
 	}
 	data, err := os.ReadFile(strings.TrimSpace(path))
 	if err != nil {
@@ -90,70 +94,4 @@ func inspectCommand(path []string, flags ...string) ([]byte, error) {
 		return nil, fmt.Errorf("inspect %s: %w", strings.Join(path, " "), err)
 	}
 	return data, nil
-}
-
-type commandHelpJSON struct {
-	Params    []commandVariableJSON `json:"params"`
-	Variables []commandVariableJSON `json:"variables"`
-}
-
-type commandVariableJSON struct {
-	Name     string          `json:"name"`
-	Text     string          `json:"text"`
-	Default  json.RawMessage `json:"default"`
-	Type     string          `json:"type"`
-	Hide     bool            `json:"hide"`
-	Private  bool            `json:"private"`
-	Multiple bool            `json:"multiple"`
-	Options  []string        `json:"options"`
-}
-
-func parseCommandVariables(data []byte) ([]specVariable, error) {
-	var help commandHelpJSON
-	if err := json.Unmarshal(data, &help); err != nil {
-		return nil, fmt.Errorf("parse command help: %w", err)
-	}
-	params := help.Params
-	if params == nil {
-		params = help.Variables
-	}
-
-	variables := make([]specVariable, 0, len(params))
-	for _, param := range params {
-		if param.Name == "" || param.Private {
-			continue
-		}
-		variable := specVariable{
-			Name:     param.Name,
-			Text:     param.Text,
-			Type:     param.Type,
-			Hide:     param.Hide,
-			Multiple: param.Multiple,
-			Options:  append([]string(nil), param.Options...),
-		}
-		if len(param.Default) > 0 && string(param.Default) != "null" {
-			var value any
-			if err := json.Unmarshal(param.Default, &value); err != nil {
-				return nil, fmt.Errorf("parse default for %q: %w", param.Name, err)
-			}
-			text, err := defaultText(value)
-			if err != nil {
-				return nil, fmt.Errorf("parse default for %q: %w", param.Name, err)
-			}
-			variable.Default = &text
-		}
-		variables = append(variables, variable)
-	}
-	return variables, nil
-}
-
-func defaultText(value any) (string, error) {
-	if text, ok := value.(string); ok {
-		return text, nil
-	}
-	data, err := json.Marshal(value)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
 }

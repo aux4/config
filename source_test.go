@@ -1,44 +1,39 @@
 package main
 
 import (
-	"reflect"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
-func TestParseCommandVariablesParams(t *testing.T) {
-	data := []byte(`{"name":"connect","params":[{"name":"database.host","text":"Database host","default":"localhost","type":"string"},{"name":"port","text":"Port","default":5432,"type":"integer","options":["5432","6543"]},{"name":"password","text":"Password","hide":true},{"name":"internal","private":true}]}`)
-	variables, err := parseCommandVariables(data)
+// aux4 interprets extra arguments after a leaf command as command inputs.
+// Inspecting an invalid path must never run the partially matched command.
+func TestInspectLocalVariables(t *testing.T) {
+	if _, err := exec.LookPath("aux4"); err != nil {
+		t.Skip("aux4 CLI unavailable")
+	}
+	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectedDefault := "localhost"
-	expectedNumber := "5432"
-	expected := []specVariable{
-		{Name: "database.host", Text: "Database host", Type: "string", Default: &expectedDefault},
-		{Name: "port", Text: "Port", Type: "integer", Default: &expectedNumber, Options: []string{"5432", "6543"}},
-		{Name: "password", Text: "Password", Hide: true},
-	}
-	if !reflect.DeepEqual(variables, expected) {
-		t.Fatalf("variables = %#v, want %#v", variables, expected)
-	}
-}
-
-func TestParseCommandVariablesSupportsVariablesKey(t *testing.T) {
-	variables, err := parseCommandVariables([]byte(`{"variables":[{"name":"enabled","type":"boolean","default":true,"multiple":true}]}`))
-	if err != nil {
+	dir := t.TempDir()
+	if err = os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	if len(variables) != 1 || variables[0].Name != "enabled" || variables[0].Type != "boolean" || !variables[0].Multiple {
-		t.Fatalf("unexpected variables: %#v", variables)
+	t.Cleanup(func() { os.Chdir(cwd) })
+	manifest := `{"profiles":[{"name":"main","commands":[{"name":"spec-check","execute":["profile:spec-check"]}]},{"name":"spec-check","commands":[{"name":"task","execute":["touch executed"],"help":{"variables":[{"name":"tls.enabled","type":"boolean","default":"false"}]}}]}]}`
+	if err = os.WriteFile(".aux4", []byte(manifest), 0600); err != nil {
+		t.Fatal(err)
 	}
-	if variables[0].Default == nil || *variables[0].Default != "true" {
-		t.Fatalf("default = %v, want true", variables[0].Default)
+	vars, err := commandVariables([]string{"spec-check", "task"})
+	if err != nil || len(vars) != 1 || vars[0].Type != "boolean" || vars[0].Default == nil || *vars[0].Default != "false" {
+		t.Fatalf("metadata: %#v, %v", vars, err)
 	}
-}
-
-func TestParseCommandVariablesRejectsInvalidDefault(t *testing.T) {
-	_, err := parseCommandVariables([]byte(`{"params":[{"name":"value","default":}]}`))
-	if err == nil {
-		t.Fatal("expected invalid JSON error")
+	if _, err = commandVariables([]string{"spec-check", "task", "extra"}); err == nil {
+		t.Fatal("accepted extra action")
+	}
+	if _, err = os.Stat(filepath.Join(dir, "executed")); !os.IsNotExist(err) {
+		t.Fatal("target command executed")
 	}
 }
