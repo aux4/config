@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"strings"
 )
 
 // commandVariables reads the public variables advertised by an aux4 command.
@@ -13,6 +15,11 @@ import (
 func commandVariables(command []string) ([]specVariable, error) {
 	if len(command) == 0 {
 		return nil, fmt.Errorf("command is required")
+	}
+	for _, part := range command {
+		if part == "" || strings.HasPrefix(part, "-") {
+			return nil, fmt.Errorf("command path contains invalid action %q", part)
+		}
 	}
 
 	args := append([]string{}, command...)
@@ -26,7 +33,76 @@ func commandVariables(command []string) ([]specVariable, error) {
 		return nil, fmt.Errorf("read command help: %w", err)
 	}
 
-	return parseCommandVariables(output)
+	variables, err := parseCommandVariables(output)
+	if err != nil {
+		return nil, err
+	}
+	return enrichCommandVariableTypes(command, variables), nil
+}
+
+// The public help JSON intentionally omits type metadata. Read the package
+// manifest identified by `aux4 aux4 which` to retain declared types.
+func enrichCommandVariableTypes(command []string, variables []specVariable) []specVariable {
+	manifest, profile, commandName, err := commandManifest(command)
+	if err != nil {
+		return variables
+	}
+	var pack struct {
+		Profiles []struct {
+			Name     string `json:"name"`
+			Commands []struct {
+				Name string `json:"name"`
+				Help *struct {
+					Variables []struct {
+						Name string `json:"name"`
+						Type string `json:"type"`
+					} `json:"variables"`
+				} `json:"help"`
+			} `json:"commands"`
+		} `json:"profiles"`
+	}
+	if json.Unmarshal(manifest, &pack) != nil {
+		return variables
+	}
+	types := map[string]string{}
+	for _, p := range pack.Profiles {
+		if p.Name != profile {
+			continue
+		}
+		for _, c := range p.Commands {
+			if c.Name != commandName || c.Help == nil {
+				continue
+			}
+			for _, v := range c.Help.Variables {
+				types[v.Name] = v.Type
+			}
+		}
+	}
+	for i := range variables {
+		if variables[i].Type == "" {
+			variables[i].Type = types[variables[i].Name]
+		}
+	}
+	return variables
+}
+
+func commandManifest(command []string) ([]byte, string, string, error) {
+	args := append([]string{"aux4", "aux4", "which"}, command...)
+	output, err := exec.Command("aux4", args...).Output()
+	if err != nil {
+		return nil, "", "", err
+	}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) < 2 || lines[0] == "" {
+		return nil, "", "", fmt.Errorf("invalid command location")
+	}
+	parts := strings.SplitN(lines[1], " → ", 2)
+	if len(parts) != 2 {
+		return nil, "", "", fmt.Errorf("invalid command location")
+	}
+	profile := strings.TrimSpace(strings.Fields(parts[0])[len(strings.Fields(parts[0]))-1])
+	data, err := os.ReadFile(lines[0])
+	return data, profile, strings.TrimSpace(parts[1]), err
 }
 
 type commandHelpJSON struct {
