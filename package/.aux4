@@ -103,6 +103,48 @@
               }
             ]
           }
+        },
+        {
+          "name": "spec",
+          "execute": [
+            "profile:config:spec"
+          ],
+          "help": {
+            "text": "Manage configuration specs"
+          }
+        }
+      ]
+    },
+    {
+      "name": "config:spec",
+      "commands": [
+        {
+          "name": "generate",
+          "execute": [
+            "${packageDir}/aux4-config spec-generate values(file, prefix, command)"
+          ],
+          "help": {
+            "text": "Merge command variables into a YAML configuration spec",
+            "variables": [
+              {
+                "name": "command",
+                "text": "Command path to inspect",
+                "arg": true,
+                "multiple": true,
+                "default": ""
+              },
+              {
+                "name": "file",
+                "text": "Configuration spec file to create or update",
+                "default": "config.spec.yaml"
+              },
+              {
+                "name": "prefix",
+                "text": "Dotted path under which to nest the command fields",
+                "default": ""
+              }
+            ]
+          }
         }
       ]
     }

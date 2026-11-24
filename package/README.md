@@ -10,6 +10,16 @@ aux4 aux4 pkger install aux4/config
 
 ## Usage
 
+### Generate a configuration spec
+
+```bash
+aux4 config spec generate myapp database connect --prefix database
+aux4 config spec generate myapp serve
+```
+
+Both commands contribute fields to the same `config.spec.yaml`. Use
+`--file` to choose another file. See [spec generate](./commands/config/spec/generate).
+
 ### Create Configuration File
 It can be a YAML or JSON file.
 

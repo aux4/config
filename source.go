@@ -6,103 +6,90 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 )
 
-// commandVariables reads the public variables advertised by an aux4 command.
-// The command is invoked with --help --json, which asks aux4 to inspect the
-// command without running its execute instructions.
+// Inspect each routing step before extending the path. aux4 treats extra
+// positional arguments on a leaf as input, even when help was requested.
 func commandVariables(command []string) ([]specVariable, error) {
 	if len(command) == 0 {
 		return nil, fmt.Errorf("command is required")
 	}
-	for _, part := range command {
-		if part == "" || strings.HasPrefix(part, "-") {
-			return nil, fmt.Errorf("command path contains invalid action %q", part)
+	for i, part := range command {
+		if part == "" || strings.HasPrefix(part, "-") || strings.ContainsAny(part, "\r\n") {
+			return nil, fmt.Errorf("invalid command name %q", part)
+		}
+		if i == len(command)-1 {
+			break
+		}
+		src, err := inspectCommand(command[:i+1], "--showSource")
+		if err != nil {
+			return nil, err
+		}
+		if !staticProfile.Match(bytes.TrimSpace(src)) {
+			return nil, fmt.Errorf("%s does not route to a static command profile", strings.Join(command[:i+1], " "))
 		}
 	}
-
-	args := append([]string{}, command...)
-	args = append(args, "--help", "--json")
-	cmd := exec.Command("aux4", args...)
-	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
-			return nil, fmt.Errorf("read command help: %s", bytes.TrimSpace(exitErr.Stderr))
-		}
-		return nil, fmt.Errorf("read command help: %w", err)
-	}
-
-	variables, err := parseCommandVariables(output)
+	location, err := inspectCommand(command, "--whereIsIt")
 	if err != nil {
 		return nil, err
 	}
-	return enrichCommandVariableTypes(command, variables), nil
-}
-
-// The public help JSON intentionally omits type metadata. Read the package
-// manifest identified by `aux4 aux4 which` to retain declared types.
-func enrichCommandVariableTypes(command []string, variables []specVariable) []specVariable {
-	manifest, profile, commandName, err := commandManifest(command)
+	header, path, _ := strings.Cut(strings.TrimSpace(string(location)), "\n")
+	owner, name, found := strings.Cut(header, " → ")
+	parts := strings.Fields(owner)
+	if !found || len(parts) == 0 || name != command[len(command)-1] {
+		return nil, fmt.Errorf("unexpected aux4 command location")
+	}
+	if path == "" {
+		// Built-in commands have no manifest.
+		help, err := inspectCommand(command, "--help", "--json")
+		if err != nil {
+			return nil, err
+		}
+		return parseCommandVariables(help)
+	}
+	data, err := os.ReadFile(strings.TrimSpace(path))
 	if err != nil {
-		return variables
+		return nil, err
 	}
-	var pack struct {
+	var manifest struct {
 		Profiles []struct {
-			Name     string `json:"name"`
+			Name     string
 			Commands []struct {
-				Name string `json:"name"`
-				Help *struct {
-					Variables []struct {
-						Name string `json:"name"`
-						Type string `json:"type"`
-					} `json:"variables"`
-				} `json:"help"`
-			} `json:"commands"`
-		} `json:"profiles"`
+				Name    string
+				Private bool
+				Help    struct{ Variables []specVariable }
+			}
+		}
 	}
-	if json.Unmarshal(manifest, &pack) != nil {
-		return variables
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, err
 	}
-	types := map[string]string{}
-	for _, p := range pack.Profiles {
-		if p.Name != profile {
+	for _, profile := range manifest.Profiles {
+		if profile.Name != parts[len(parts)-1] {
 			continue
 		}
-		for _, c := range p.Commands {
-			if c.Name != commandName || c.Help == nil {
-				continue
-			}
-			for _, v := range c.Help.Variables {
-				types[v.Name] = v.Type
+		for _, cmd := range profile.Commands {
+			if cmd.Name == name && !cmd.Private {
+				return cmd.Help.Variables, nil
 			}
 		}
 	}
-	for i := range variables {
-		if variables[i].Type == "" {
-			variables[i].Type = types[variables[i].Name]
-		}
-	}
-	return variables
+	return nil, fmt.Errorf("no public command definition for %s in %s", strings.Join(command, " "), path)
 }
 
-func commandManifest(command []string) ([]byte, string, string, error) {
-	args := append([]string{"aux4", "aux4", "which"}, command...)
-	output, err := exec.Command("aux4", args...).Output()
+var staticProfile = regexp.MustCompile(`^1 profile:[[:alnum:]_:.@/-]+$`)
+
+func inspectCommand(path []string, flags ...string) ([]byte, error) {
+	args := append(append([]string{}, path...), flags...)
+	cmd := exec.Command("aux4", args...)
+	cmd.Env = append(os.Environ(), "AUX4_NO_HOOKS=true", "AUX4_NO_DAEMON=1")
+	data, err := cmd.Output()
 	if err != nil {
-		return nil, "", "", err
+		return nil, fmt.Errorf("inspect %s: %w", strings.Join(path, " "), err)
 	}
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) < 2 || lines[0] == "" {
-		return nil, "", "", fmt.Errorf("invalid command location")
-	}
-	parts := strings.SplitN(lines[1], " → ", 2)
-	if len(parts) != 2 {
-		return nil, "", "", fmt.Errorf("invalid command location")
-	}
-	profile := strings.TrimSpace(strings.Fields(parts[0])[len(strings.Fields(parts[0]))-1])
-	data, err := os.ReadFile(lines[0])
-	return data, profile, strings.TrimSpace(parts[1]), err
+	return data, nil
 }
 
 type commandHelpJSON struct {
