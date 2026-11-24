@@ -75,8 +75,57 @@ func TestMergeSpecMultipleUsesArrayItems(t *testing.T) {
 	}
 	data, _ := os.ReadFile(file)
 	output := string(data)
-	if !strings.Contains(output, "type: array") || !strings.Contains(output, "items:") || !strings.Contains(output, "default: a") {
+	if !strings.Contains(output, "type: array") || !strings.Contains(output, "items:") || !strings.Contains(output, "- a") {
 		t.Fatalf("unexpected array schema:\n%s", output)
+	}
+}
+
+func TestMergeSpecMultipleEmptyDefaultIsTypedArray(t *testing.T) {
+	file := t.TempDir() + "/config.spec.yaml"
+	empty := ""
+	if err := mergeSpec(file, "", []specVariable{{Name: "hosts", Type: "string", Multiple: true, Default: &empty}}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(file)
+	if !strings.Contains(string(data), "default: []") {
+		t.Fatalf("expected empty typed array default:\n%s", data)
+	}
+}
+
+func TestMergeSpecRejectsEmptyPathSegments(t *testing.T) {
+	file := t.TempDir() + "/config.spec.yaml"
+	if err := mergeSpec(file, "database.", []specVariable{{Name: "host", Type: "string"}}); err == nil {
+		t.Fatal("expected invalid prefix error")
+	}
+	if err := mergeSpec(file, "database", []specVariable{{Name: ".host", Type: "string"}}); err == nil {
+		t.Fatal("expected invalid variable path error")
+	}
+}
+
+func TestMergeSpecEquivalentHandFormattingIsUnchanged(t *testing.T) {
+	file := t.TempDir() + "/config.spec.yaml"
+	initial := "type: object\nproperties:\n  host: {type: string}\n"
+	if err := os.WriteFile(file, []byte(initial), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := mergeSpec(file, "", []specVariable{{Name: "host", Type: "string"}}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(file)
+	if string(data) != initial {
+		t.Fatalf("equivalent schema was reformatted:\n%s", data)
+	}
+}
+
+func TestMergeSpecInvalidTypedDefaultStaysSafe(t *testing.T) {
+	file := t.TempDir() + "/config.spec.yaml"
+	invalid := "not-a-number"
+	if err := mergeSpec(file, "", []specVariable{{Name: "port", Type: "integer", Default: &invalid}}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(file)
+	if strings.Contains(string(data), "!!int") || !strings.Contains(string(data), "default: not-a-number") {
+		t.Fatalf("invalid typed default was emitted unsafely:\n%s", data)
 	}
 }
 

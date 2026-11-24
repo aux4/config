@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,7 +58,13 @@ func mergeSpec(filename, prefix string, variables []specVariable) error {
 		if variable.Private || strings.TrimSpace(variable.Name) == "" {
 			continue
 		}
+		if !validSpecPathPart(prefix) || !validSpecPathPart(variable.Name) {
+			return fmt.Errorf("invalid config spec path %q", strings.TrimSpace(prefix)+"."+strings.TrimSpace(variable.Name))
+		}
 		path := joinSpecPath(prefix, variable.Name)
+		if !validSpecPath(path) {
+			return fmt.Errorf("invalid config spec path %q", path)
+		}
 		if err := mergeField(properties, path, variableNode(variable), path); err != nil {
 			return err
 		}
@@ -67,7 +74,7 @@ func mergeSpec(filename, prefix string, variables []specVariable) error {
 	if err != nil {
 		return fmt.Errorf("encode config spec: %w", err)
 	}
-	if len(original) > 0 && string(original) == string(data) {
+	if len(original) > 0 && nodeFingerprint(root) == nodeFingerprintFromBytes(original) {
 		return nil
 	}
 	dir := filepath.Dir(filename)
@@ -77,14 +84,21 @@ func mergeSpec(filename, prefix string, variables []specVariable) error {
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
-	if err := tmp.Chmod(mode); err == nil {
-		_, err = tmp.Write(data)
-	}
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
 		return fmt.Errorf("write config spec: %w", err)
+	}
+	written, writeErr := tmp.Write(data)
+	if writeErr != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write config spec: %w", writeErr)
+	}
+	if written != len(data) {
+		_ = tmp.Close()
+		return fmt.Errorf("write config spec: short write")
+	}
+	if closeErr := tmp.Close(); closeErr != nil {
+		return fmt.Errorf("write config spec: %w", closeErr)
 	}
 	if err := os.Rename(tmpName, filename); err != nil {
 		return fmt.Errorf("replace config spec: %w", err)
@@ -176,7 +190,17 @@ func variableNode(variable specVariable) *yaml.Node {
 		appendMapping(field, scalar("options"), options)
 	}
 	if variable.Default != nil {
-		appendMapping(field, scalar("default"), typedScalar(*variable.Default, typ))
+		if variable.Multiple {
+			defaults := &yaml.Node{Kind: yaml.SequenceNode}
+			if strings.TrimSpace(*variable.Default) != "" {
+				for _, value := range strings.Split(*variable.Default, ",") {
+					defaults.Content = append(defaults.Content, typedScalar(strings.TrimSpace(value), typ))
+				}
+			}
+			appendMapping(field, scalar("default"), defaults)
+		} else {
+			appendMapping(field, scalar("default"), typedScalar(*variable.Default, typ))
+		}
 	}
 	return field
 }
@@ -258,6 +282,31 @@ func joinSpecPath(prefix, name string) string {
 	return strings.Trim(strings.TrimSpace(prefix)+"."+strings.TrimSpace(name), ".")
 }
 
+func validSpecPath(path string) bool {
+	if path == "" {
+		return false
+	}
+	for _, part := range strings.Split(path, ".") {
+		if strings.TrimSpace(part) == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func validSpecPathPart(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return true
+	}
+	for _, part := range strings.Split(path, ".") {
+		if strings.TrimSpace(part) == "" {
+			return false
+		}
+	}
+	return true
+}
+
 func scalar(value string) *yaml.Node {
 	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value}
 }
@@ -266,11 +315,17 @@ func typedScalar(value, typ string) *yaml.Node {
 	node := scalar(value)
 	switch typ {
 	case "boolean", "bool":
-		node.Tag = "!!bool"
+		if _, err := strconv.ParseBool(strings.TrimSpace(value)); err == nil {
+			node.Tag = "!!bool"
+		}
 	case "integer", "int":
-		node.Tag = "!!int"
+		if _, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil {
+			node.Tag = "!!int"
+		}
 	case "number", "float":
-		node.Tag = "!!float"
+		if _, err := strconv.ParseFloat(strings.TrimSpace(value), 64); err == nil {
+			node.Tag = "!!float"
+		}
 	case "null":
 		node.Tag = "!!null"
 	}
@@ -297,18 +352,28 @@ func appendMapping(mapping, key, value *yaml.Node) {
 	mapping.Content = append(mapping.Content, key, value)
 }
 
-func nodesEqual(left, right *yaml.Node) bool {
-	if left == nil || right == nil {
-		return left == right
-	}
-	return left.Kind == right.Kind && left.Tag == right.Tag && left.Value == right.Value && len(left.Content) == len(right.Content) && equalContent(left.Content, right.Content)
-}
-
-func equalContent(left, right []*yaml.Node) bool {
-	for i := range left {
-		if !nodesEqual(left[i], right[i]) {
-			return false
+func nodeFingerprint(root *yaml.Node) string {
+	var b strings.Builder
+	var visit func(*yaml.Node)
+	visit = func(node *yaml.Node) {
+		if node == nil {
+			b.WriteString("nil")
+			return
+		}
+		fmt.Fprintf(&b, "%d|%s|%s|", node.Kind, node.Tag, node.Value)
+		for _, child := range node.Content {
+			visit(child)
 		}
 	}
-	return true
+	visit(root)
+	return b.String()
+}
+
+func nodeFingerprintFromBytes(data []byte) string {
+	var document yaml.Node
+	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
+	if decoder.Decode(&document) != nil {
+		return ""
+	}
+	return nodeFingerprint(&document)
 }
