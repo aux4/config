@@ -21,10 +21,16 @@
 ### Preserve both sections and support repeated generation
 
 ```execute
+set -e
+work=$(mktemp -d ./config-spec-test.XXXXXX)
+trap 'rm -rf "$work"' EXIT
+(
+cd "$work"
 aux4 config spec generate spec-example
 aux4 config spec generate spec-example --prefix notifications.smtp
 aux4 config spec generate spec-example --prefix notifications.smtp
 grep -c 'type: boolean' config.spec.yaml
+)
 ```
 
 ```expect

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -40,13 +41,17 @@ func mergeSpec(filename, prefix string, variables []specVariable) error {
 	}
 	defer unlock()
 	mode := os.FileMode(0644)
-	var original []byte
+
 	if info, statErr := os.Stat(filename); statErr == nil {
 		mode = info.Mode().Perm()
-		original, _ = os.ReadFile(filename)
+
 	}
 
 	root, err := readSpecDocument(filename)
+	if err != nil {
+		return err
+	}
+	before, err := yaml.Marshal(root)
 	if err != nil {
 		return err
 	}
@@ -74,7 +79,7 @@ func mergeSpec(filename, prefix string, variables []specVariable) error {
 	if err != nil {
 		return fmt.Errorf("encode config spec: %w", err)
 	}
-	if len(original) > 0 && nodeFingerprint(root) == nodeFingerprintFromBytes(original) {
+	if bytes.Equal(before, data) {
 		return nil
 	}
 	dir := filepath.Dir(filename)
@@ -148,12 +153,12 @@ func readSpecDocument(filename string) (*yaml.Node, error) {
 
 func ensureSpecRoot(document *yaml.Node) error {
 	root := document.Content[0]
-	if keyNode(root, "type") == nil {
+	if mappingValue(root, "type") == nil {
 		appendMapping(root, scalar("type"), scalar("object"))
 	} else if value := mappingValue(root, "type"); value.Value != "object" {
 		return fmt.Errorf("config spec root type must be object")
 	}
-	properties := keyNode(root, "properties")
+	properties := mappingValue(root, "properties")
 	if properties == nil {
 		appendMapping(root, scalar("properties"), &yaml.Node{Kind: yaml.MappingNode})
 	} else if properties.Kind != yaml.MappingNode {
@@ -208,7 +213,7 @@ func variableNode(variable specVariable) *yaml.Node {
 func mergeField(properties *yaml.Node, path string, incoming *yaml.Node, fullPath string) error {
 	parts := strings.Split(path, ".")
 	name := parts[0]
-	existing := keyNode(properties, name)
+	existing := mappingValue(properties, name)
 	if len(parts) > 1 {
 		if existing == nil {
 			existing = &yaml.Node{Kind: yaml.MappingNode}
@@ -218,13 +223,13 @@ func mergeField(properties *yaml.Node, path string, incoming *yaml.Node, fullPat
 		} else if value := mappingValue(existing, "type"); value != nil && value.Value != "object" {
 			return fmt.Errorf("config spec conflict at %s", fullPath)
 		}
-		if keyNode(existing, "type") == nil {
+		if mappingValue(existing, "type") == nil {
 			appendMapping(existing, scalar("type"), scalar("object"))
 		}
 		if mappingValue(existing, "type").Value != "object" {
 			return fmt.Errorf("config spec conflict at %s", fullPath)
 		}
-		child := keyNode(existing, "properties")
+		child := mappingValue(existing, "properties")
 		if child == nil {
 			child = &yaml.Node{Kind: yaml.MappingNode}
 			appendMapping(existing, scalar("properties"), child)
@@ -266,7 +271,7 @@ func mergeNode(existing, incoming *yaml.Node, path string) error {
 	for i := 0; i+1 < len(incoming.Content); i += 2 {
 		key := incoming.Content[i].Value
 		value := incoming.Content[i+1]
-		current := keyNode(existing, key)
+		current := mappingValue(existing, key)
 		if current == nil {
 			appendMapping(existing, incoming.Content[i], value)
 			continue
@@ -333,10 +338,6 @@ func typedScalar(value, typ string) *yaml.Node {
 }
 
 func mappingValue(mapping *yaml.Node, key string) *yaml.Node {
-	return keyNode(mapping, key)
-}
-
-func keyNode(mapping *yaml.Node, key string) *yaml.Node {
 	if mapping == nil || mapping.Kind != yaml.MappingNode {
 		return nil
 	}
@@ -350,30 +351,4 @@ func keyNode(mapping *yaml.Node, key string) *yaml.Node {
 
 func appendMapping(mapping, key, value *yaml.Node) {
 	mapping.Content = append(mapping.Content, key, value)
-}
-
-func nodeFingerprint(root *yaml.Node) string {
-	var b strings.Builder
-	var visit func(*yaml.Node)
-	visit = func(node *yaml.Node) {
-		if node == nil {
-			b.WriteString("nil")
-			return
-		}
-		fmt.Fprintf(&b, "%d|%s|%s|", node.Kind, node.Tag, node.Value)
-		for _, child := range node.Content {
-			visit(child)
-		}
-	}
-	visit(root)
-	return b.String()
-}
-
-func nodeFingerprintFromBytes(data []byte) string {
-	var document yaml.Node
-	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
-	if decoder.Decode(&document) != nil {
-		return ""
-	}
-	return nodeFingerprint(&document)
 }
