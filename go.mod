@@ -1,5 +1,6 @@
 module aux4.dev/config
 
 go 1.23.6
+toolchain go1.26.11
 
 require gopkg.in/yaml.v3 v3.0.1 // indirect
